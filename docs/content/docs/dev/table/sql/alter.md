@@ -103,6 +103,12 @@ tableEnv.executeSql("ALTER TABLE Orders RENAME TO NewOrders");
 // a string array: ["NewOrders"]
 String[] tables = tableEnv.listTables();
 // or tableEnv.executeSql("SHOW TABLES").print();
+
+// register a catalog named "cat2"
+tableEnv.executeSql("CREATE CATALOG cat2 WITH ('type'='generic_in_memory')");
+
+// add a new property `default-database`
+tableEnv.executeSql("ALTER CATALOG cat2 SET ('default-database'='db')");
 ```
 {{< /tab >}}
 {{< tab "Scala" >}}
@@ -140,6 +146,12 @@ tableEnv.executeSql("ALTER TABLE Orders RENAME TO NewOrders")
 // a string array: ["NewOrders"]
 val tables = tableEnv.listTables()
 // or tableEnv.executeSql("SHOW TABLES").print()
+
+// register a catalog named "cat2"
+tableEnv.executeSql("CREATE CATALOG cat2 WITH ('type'='generic_in_memory')")
+
+// add a new property `default-database`
+tableEnv.executeSql("ALTER CATALOG cat2 SET ('default-database'='db')")
 ```
 {{< /tab >}}
 {{< tab "Python" >}}
@@ -151,38 +163,44 @@ tables = table_env.list_tables()
 # or table_env.execute_sql("SHOW TABLES").print()
 
 # add a new column `order` to the first position
-table_env.execute_sql("ALTER TABLE Orders ADD `order` INT COMMENT 'order identifier' FIRST");
+table_env.execute_sql("ALTER TABLE Orders ADD `order` INT COMMENT 'order identifier' FIRST")
 
 # add more columns, primary key and watermark
-table_env.execute_sql("ALTER TABLE Orders ADD (ts TIMESTAMP(3), category STRING AFTER product, PRIMARY KEY(`order`) NOT ENFORCED, WATERMARK FOR ts AS ts - INTERVAL '1' HOUR)");
+table_env.execute_sql("ALTER TABLE Orders ADD (ts TIMESTAMP(3), category STRING AFTER product, PRIMARY KEY(`order`) NOT ENFORCED, WATERMARK FOR ts AS ts - INTERVAL '1' HOUR)")
 
 # modify column type, column comment and watermark
-table_env.execute_sql("ALTER TABLE Orders MODIFY (amount DOUBLE NOT NULL, category STRING COMMENT 'category identifier' AFTER `order`, WATERMARK FOR ts AS ts)");
+table_env.execute_sql("ALTER TABLE Orders MODIFY (amount DOUBLE NOT NULL, category STRING COMMENT 'category identifier' AFTER `order`, WATERMARK FOR ts AS ts)")
 
 # drop watermark
-table_env.execute_sql("ALTER TABLE Orders DROP WATERMARK");
+table_env.execute_sql("ALTER TABLE Orders DROP WATERMARK")
 
 # drop column
-table_env.execute_sql("ALTER TABLE Orders DROP (amount, ts, category)");
+table_env.execute_sql("ALTER TABLE Orders DROP (amount, ts, category)")
 
 # rename column
-table_env.execute_sql("ALTER TABLE Orders RENAME `order` TO order_id");
+table_env.execute_sql("ALTER TABLE Orders RENAME `order` TO order_id")
 
 # rename "Orders" to "NewOrders"
-table_env.execute_sql("ALTER TABLE Orders RENAME TO NewOrders");
+table_env.execute_sql("ALTER TABLE Orders RENAME TO NewOrders")
 
 # a string array: ["NewOrders"]
 tables = table_env.list_tables()
 # or table_env.execute_sql("SHOW TABLES").print()
+
+# register a catalog named "cat2"
+table_env.execute_sql("CREATE CATALOG cat2 WITH ('type'='generic_in_memory')")
+
+# add a new property `default-database`
+table_env.execute_sql("ALTER CATALOG cat2 SET ('default-database'='db')")
 ```
 {{< /tab >}}
 {{< tab "SQL CLI" >}}
 ```sql
 Flink SQL> CREATE TABLE Orders (`user` BIGINT, product STRING, amount INT) WITH (...);
-[INFO] Execute statement succeed.
+[INFO] Execute statement succeeded.
 
 Flink SQL> ALTER TABLE Orders ADD `order` INT COMMENT 'order identifier' FIRST;
-[INFO] Execute statement succeed.
+[INFO] Execute statement succeeded.
 
 Flink SQL> DESCRIBE Orders;
 +---------+--------+------+-----+--------+-----------+------------------+
@@ -196,7 +214,7 @@ Flink SQL> DESCRIBE Orders;
 4 rows in set
 
 Flink SQL> ALTER TABLE Orders ADD (ts TIMESTAMP(3), category STRING AFTER product, PRIMARY KEY(`order`) NOT ENFORCED, WATERMARK FOR ts AS ts - INTERVAL '1' HOUR);
-[INFO] Execute statement succeed. 
+[INFO] Execute statement succeeded. 
 
 Flink SQL> DESCRIBE Orders;
 +----------+------------------------+-------+------------+--------+--------------------------+------------------+
@@ -212,7 +230,7 @@ Flink SQL> DESCRIBE Orders;
 6 rows in set
 
 Flink SQL> ALTER TABLE Orders MODIFY (amount DOUBLE NOT NULL, category STRING COMMENT 'category identifier' AFTER `order`, WATERMARK FOR ts AS ts);
-[INFO] Execute statement succeed. 
+[INFO] Execute statement succeeded. 
 
 Flink SQL> DESCRIBE Orders;
 +----------+------------------------+-------+------------+--------+-----------+---------------------+
@@ -228,7 +246,7 @@ Flink SQL> DESCRIBE Orders;
 6 rows in set
 
 Flink SQL> ALTER TABLE Orders DROP WATERMARK;
-[INFO] Execute statement succeed.
+[INFO] Execute statement succeeded.
 
 Flink SQL> DESCRIBE Orders;
 +----------+--------------+-------+------------+--------+-----------+---------------------+
@@ -244,7 +262,7 @@ Flink SQL> DESCRIBE Orders;
 6 rows in set
 
 Flink SQL> ALTER TABLE Orders DROP (amount, ts, category);
-[INFO] Execute statement succeed.
+[INFO] Execute statement succeeded.
 
 Flink SQL> DESCRIBE Orders;
 +---------+--------+-------+------------+--------+-----------+------------------+
@@ -257,7 +275,7 @@ Flink SQL> DESCRIBE Orders;
 3 rows in set
 
 Flink SQL> ALTER TABLE Orders RENAME `order` to `order_id`;
-[INFO] Execute statement succeed.
+[INFO] Execute statement succeeded.
 
 Flink SQL> DESCRIBE Orders;
 +----------+--------+-------+---------------+--------+-----------+------------------+
@@ -278,7 +296,7 @@ Flink SQL> SHOW TABLES;
 1 row in set
 
 Flink SQL> ALTER TABLE Orders RENAME TO NewOrders;
-[INFO] Execute statement succeed.
+[INFO] Execute statement succeeded.
 
 Flink SQL> SHOW TABLES;
 +------------+
@@ -287,6 +305,23 @@ Flink SQL> SHOW TABLES;
 |  NewOrders |
 +------------+
 1 row in set
+
+Flink SQL> CREATE CATALOG cat2 WITH ('type'='generic_in_memory');
+[INFO] Execute statement succeeded.
+
+Flink SQL> ALTER CATALOG cat2 SET ('default-database'='db_new');
+[INFO] Execute statement succeeded.
+
+Flink SQL> DESC CATALOG EXTENDED cat2;
++-------------------------+-------------------+
+|               info name |        info value |
++-------------------------+-------------------+
+|                    name |              cat2 |
+|                    type | generic_in_memory |
+|                 comment |                   |
+| option:default-database |            db_new |
++-------------------------+-------------------+
+4 rows in set
 ```
 {{< /tab >}}
 {{< /tabs >}}
@@ -505,3 +540,21 @@ If the function doesn't exist, nothing happens.
 
 Language tag to instruct flink runtime how to execute the function. Currently only JAVA, SCALA and PYTHON are supported, the default language for a function is JAVA.
 
+## ALTER CATALOG
+
+```sql
+ALTER CATALOG catalog_name SET (key1=val1, ...)
+```
+
+### SET
+
+Set one or more properties in the specified catalog. If a particular property is already set in the catalog, override the old value with the new one.
+
+The following examples illustrate the usage of the `SET` statements.
+
+```sql
+-- set 'default-database'
+ALTER CATALOG cat2 SET ('default-database'='db');
+```
+
+{{< top >}}

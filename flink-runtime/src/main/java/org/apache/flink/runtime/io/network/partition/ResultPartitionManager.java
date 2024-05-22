@@ -19,6 +19,8 @@
 package org.apache.flink.runtime.io.network.partition;
 
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.runtime.shuffle.DefaultShuffleMetrics;
+import org.apache.flink.runtime.shuffle.ShuffleMetrics;
 import org.apache.flink.util.CollectionUtil;
 import org.apache.flink.util.concurrent.ScheduledExecutor;
 
@@ -107,7 +109,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
     @Override
     public ResultSubpartitionView createSubpartitionView(
             ResultPartitionID partitionId,
-            int subpartitionIndex,
+            ResultSubpartitionIndexSet subpartitionIndexSet,
             BufferAvailabilityListener availabilityListener)
             throws IOException {
 
@@ -119,10 +121,10 @@ public class ResultPartitionManager implements ResultPartitionProvider {
                 throw new PartitionNotFoundException(partitionId);
             }
 
-            LOG.debug("Requesting subpartition {} of {}.", subpartitionIndex, partition);
+            LOG.debug("Requesting subpartitions {} of {}.", subpartitionIndexSet, partition);
 
             subpartitionView =
-                    partition.createSubpartitionView(subpartitionIndex, availabilityListener);
+                    partition.createSubpartitionView(subpartitionIndexSet, availabilityListener);
         }
 
         return subpartitionView;
@@ -131,7 +133,7 @@ public class ResultPartitionManager implements ResultPartitionProvider {
     @Override
     public Optional<ResultSubpartitionView> createSubpartitionViewOrRegisterListener(
             ResultPartitionID partitionId,
-            int subpartitionIndex,
+            ResultSubpartitionIndexSet subpartitionIndexSet,
             BufferAvailabilityListener availabilityListener,
             PartitionRequestListener partitionRequestListener)
             throws IOException {
@@ -147,10 +149,11 @@ public class ResultPartitionManager implements ResultPartitionProvider {
                 subpartitionView = null;
             } else {
 
-                LOG.debug("Requesting subpartition {} of {}.", subpartitionIndex, partition);
+                LOG.debug("Requesting subpartitions {} of {}.", subpartitionIndexSet, partition);
 
                 subpartitionView =
-                        partition.createSubpartitionView(subpartitionIndex, availabilityListener);
+                        partition.createSubpartitionView(
+                                subpartitionIndexSet, availabilityListener);
             }
         }
 
@@ -290,6 +293,20 @@ public class ResultPartitionManager implements ResultPartitionProvider {
     public Collection<ResultPartitionID> getUnreleasedPartitions() {
         synchronized (registeredPartitions) {
             return registeredPartitions.keySet();
+        }
+    }
+
+    public Optional<ShuffleMetrics> getMetricsOfPartition(ResultPartitionID partitionId) {
+        synchronized (registeredPartitions) {
+            final ResultPartition partition = registeredPartitions.get(partitionId);
+
+            if (partition == null) {
+                return Optional.empty();
+            }
+
+            return Optional.of(
+                    new DefaultShuffleMetrics(
+                            partition.getResultPartitionBytes().createSnapshot()));
         }
     }
 }

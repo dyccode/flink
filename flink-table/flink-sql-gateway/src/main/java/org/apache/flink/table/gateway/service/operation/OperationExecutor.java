@@ -37,7 +37,9 @@ import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.TableConfig;
 import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.api.bridge.java.internal.StreamTableEnvironmentImpl;
+import org.apache.flink.table.api.internal.CachedPlan;
 import org.apache.flink.table.api.internal.ExecutableOperationContextImpl;
+import org.apache.flink.table.api.internal.PlanCacheManager;
 import org.apache.flink.table.api.internal.TableEnvironmentInternal;
 import org.apache.flink.table.api.internal.TableResultInternal;
 import org.apache.flink.table.catalog.CatalogBaseTable.TableKind;
@@ -63,6 +65,7 @@ import org.apache.flink.table.gateway.api.results.FunctionInfo;
 import org.apache.flink.table.gateway.api.results.TableInfo;
 import org.apache.flink.table.gateway.environment.SqlGatewayStreamExecutionEnvironment;
 import org.apache.flink.table.gateway.service.context.SessionContext;
+import org.apache.flink.table.gateway.service.materializedtable.MaterializedTableManager;
 import org.apache.flink.table.gateway.service.result.ResultFetcher;
 import org.apache.flink.table.gateway.service.utils.SqlExecutionException;
 import org.apache.flink.table.module.ModuleManager;
@@ -81,6 +84,7 @@ import org.apache.flink.table.operations.StatementSetOperation;
 import org.apache.flink.table.operations.UnloadModuleOperation;
 import org.apache.flink.table.operations.UseOperation;
 import org.apache.flink.table.operations.command.AddJarOperation;
+import org.apache.flink.table.operations.command.DescribeJobOperation;
 import org.apache.flink.table.operations.command.ExecutePlanOperation;
 import org.apache.flink.table.operations.command.RemoveJarOperation;
 import org.apache.flink.table.operations.command.ResetOperation;
@@ -93,6 +97,7 @@ import org.apache.flink.table.operations.ddl.CreateCatalogFunctionOperation;
 import org.apache.flink.table.operations.ddl.CreateOperation;
 import org.apache.flink.table.operations.ddl.CreateTempSystemFunctionOperation;
 import org.apache.flink.table.operations.ddl.DropOperation;
+import org.apache.flink.table.operations.materializedtable.MaterializedTableOperation;
 import org.apache.flink.table.resource.ResourceManager;
 import org.apache.flink.table.utils.DateTimeUtils;
 import org.apache.flink.util.CollectionUtil;
@@ -190,23 +195,43 @@ public class OperationExecutor {
     }
 
     public ResultFetcher executeStatement(OperationHandle handle, String statement) {
+        return executeStatement(handle, new Configuration(), statement);
+    }
+
+    public ResultFetcher executeStatement(
+            OperationHandle handle, Configuration customConfig, String statement) {
         // Instantiate the TableEnvironment lazily
         ResourceManager resourceManager = sessionContext.getSessionState().resourceManager.copy();
-        TableEnvironmentInternal tableEnv = getTableEnvironment(resourceManager);
-        List<Operation> parsedOperations = tableEnv.getParser().parse(statement);
-        if (parsedOperations.size() > 1) {
-            throw new UnsupportedOperationException(
-                    "Unsupported SQL statement! Execute statement only accepts a single SQL statement or "
-                            + "multiple 'INSERT INTO' statements wrapped in a 'STATEMENT SET' block.");
+        TableEnvironmentInternal tableEnv = getTableEnvironment(resourceManager, customConfig);
+        PlanCacheManager planCacheManager = sessionContext.getPlanCacheManager();
+        CachedPlan cachedPlan = null;
+        Operation op = null;
+
+        if (planCacheManager != null) {
+            Optional<CachedPlan> cachedPlanOptional = planCacheManager.getPlan(statement);
+            if (cachedPlanOptional.isPresent()) {
+                cachedPlan = cachedPlanOptional.get();
+                op = cachedPlan.getOperation();
+            }
         }
-        Operation op = parsedOperations.get(0);
+        if (op == null) {
+            List<Operation> parsedOperations = tableEnv.getParser().parse(statement);
+            if (parsedOperations.size() > 1) {
+                throw new UnsupportedOperationException(
+                        "Unsupported SQL statement! Execute statement only accepts a single SQL statement or "
+                                + "multiple 'INSERT INTO' statements wrapped in a 'STATEMENT SET' block.");
+            }
+            op = parsedOperations.get(0);
+        }
+
         if (op instanceof CallProcedureOperation) {
             // if the operation is CallProcedureOperation, we need to set the stream environment
             // context to it since the procedure will use the stream environment
             try {
                 SqlGatewayStreamExecutionEnvironment.setAsContext(
                         sessionContext.getUserClassloader());
-                return executeOperation(tableEnv, handle, op).withResourceManager(resourceManager);
+                return executeOperation(tableEnv, handle, op, statement, cachedPlan)
+                        .withResourceManager(resourceManager);
             } finally {
                 SqlGatewayStreamExecutionEnvironment.unsetAsContext();
             }
@@ -214,7 +239,8 @@ public class OperationExecutor {
             return sessionContext.isStatementSetState()
                     ? executeOperationInStatementSetState(tableEnv, handle, op)
                             .withResourceManager(resourceManager)
-                    : executeOperation(tableEnv, handle, op).withResourceManager(resourceManager);
+                    : executeOperation(tableEnv, handle, op, statement, cachedPlan)
+                            .withResourceManager(resourceManager);
         }
     }
 
@@ -253,6 +279,15 @@ public class OperationExecutor {
         } else {
             return listViews(catalogName, databaseName);
         }
+    }
+
+    public boolean tableExists(ObjectIdentifier tableIdentifier) {
+        return sessionContext
+                .getSessionState()
+                .catalogManager
+                .getCatalog(tableIdentifier.getCatalogName())
+                .map(catalog -> catalog.tableExists(tableIdentifier.toObjectPath()))
+                .orElse(false);
     }
 
     public ResolvedCatalogBaseTable<?> getTable(ObjectIdentifier tableIdentifier) {
@@ -325,13 +360,16 @@ public class OperationExecutor {
     // --------------------------------------------------------------------------------------------
 
     public TableEnvironmentInternal getTableEnvironment() {
-        return getTableEnvironment(sessionContext.getSessionState().resourceManager);
+        return getTableEnvironment(
+                sessionContext.getSessionState().resourceManager, new Configuration());
     }
 
-    public TableEnvironmentInternal getTableEnvironment(ResourceManager resourceManager) {
+    public TableEnvironmentInternal getTableEnvironment(
+            ResourceManager resourceManager, Configuration customConfig) {
         // checks the value of RUNTIME_MODE
         Configuration operationConfig = sessionContext.getSessionConf().clone();
         operationConfig.addAll(executionConfig);
+        operationConfig.addAll(customConfig);
         final EnvironmentSettings settings =
                 EnvironmentSettings.newInstance().withConfiguration(operationConfig).build();
 
@@ -426,7 +464,11 @@ public class OperationExecutor {
     }
 
     private ResultFetcher executeOperation(
-            TableEnvironmentInternal tableEnv, OperationHandle handle, Operation op) {
+            TableEnvironmentInternal tableEnv,
+            OperationHandle handle,
+            Operation op,
+            String statement,
+            CachedPlan cachedPlan) {
         if (op instanceof SetOperation) {
             return callSetOperation(tableEnv, handle, (SetOperation) op);
         } else if (op instanceof ResetOperation) {
@@ -446,12 +488,21 @@ public class OperationExecutor {
             return callModifyOperations(
                     tableEnv, handle, ((StatementSetOperation) op).getOperations());
         } else if (op instanceof QueryOperation) {
-            TableResultInternal result = tableEnv.executeInternal(op);
+            TableResultInternal result =
+                    cachedPlan != null
+                            ? tableEnv.executeCachedPlanInternal(cachedPlan)
+                            : tableEnv.executeInternal(op);
+            PlanCacheManager planCacheManager = sessionContext.getPlanCacheManager();
+            if (cachedPlan == null && planCacheManager != null && result.getCachedPlan() != null) {
+                planCacheManager.putPlan(statement, result.getCachedPlan());
+            }
             return ResultFetcher.fromTableResult(handle, result, true);
         } else if (op instanceof StopJobOperation) {
             return callStopJobOperation(tableEnv, handle, (StopJobOperation) op);
         } else if (op instanceof ShowJobsOperation) {
             return callShowJobsOperation(tableEnv, handle, (ShowJobsOperation) op);
+        } else if (op instanceof DescribeJobOperation) {
+            return callDescribeJobOperation(tableEnv, handle, (DescribeJobOperation) op);
         } else if (op instanceof RemoveJarOperation) {
             return callRemoveJar(handle, ((RemoveJarOperation) op).getPath());
         } else if (op instanceof AddJarOperation
@@ -460,12 +511,15 @@ public class OperationExecutor {
                 || op instanceof CreateCatalogFunctionOperation
                 || op instanceof ShowFunctionsOperation) {
             return callExecutableOperation(handle, (ExecutableOperation) op);
+        } else if (op instanceof MaterializedTableOperation) {
+            return MaterializedTableManager.callMaterializedTableOperation(
+                    this, handle, (MaterializedTableOperation) op, statement);
         } else {
             return callOperation(tableEnv, handle, op);
         }
     }
 
-    private ResultFetcher callExecutableOperation(OperationHandle handle, ExecutableOperation op) {
+    public ResultFetcher callExecutableOperation(OperationHandle handle, ExecutableOperation op) {
         TableResultInternal result =
                 op.execute(
                         new ExecutableOperationContextImpl(
@@ -487,6 +541,10 @@ public class OperationExecutor {
         tableConfig.addConfiguration(operationConfig);
 
         return tableConfig;
+    }
+
+    public SessionContext getSessionContext() {
+        return sessionContext;
     }
 
     private ResultFetcher callSetOperation(
@@ -745,6 +803,56 @@ public class OperationExecutor {
                 resultRows);
     }
 
+    public ResultFetcher callDescribeJobOperation(
+            TableEnvironmentInternal tableEnv,
+            OperationHandle operationHandle,
+            DescribeJobOperation describeJobOperation)
+            throws SqlExecutionException {
+        Configuration configuration = tableEnv.getConfig().getConfiguration();
+        Duration clientTimeout = configuration.get(ClientOptions.CLIENT_TIMEOUT);
+        String jobId = describeJobOperation.getJobId();
+        Optional<JobStatusMessage> jobStatusOp =
+                runClusterAction(
+                        configuration,
+                        operationHandle,
+                        clusterClient -> {
+                            try {
+                                JobID expectedJobId = JobID.fromHexString(jobId);
+                                return clusterClient.listJobs()
+                                        .get(clientTimeout.toMillis(), TimeUnit.MILLISECONDS)
+                                        .stream()
+                                        .filter(job -> expectedJobId.equals(job.getJobId()))
+                                        .findFirst();
+                            } catch (Exception e) {
+                                throw new SqlExecutionException(
+                                        String.format(
+                                                "Failed to get job %s in the cluster.", jobId),
+                                        e);
+                            }
+                        });
+
+        if (!jobStatusOp.isPresent()) {
+            throw new SqlExecutionException(
+                    String.format("Described job %s does not exist in the cluster.", jobId));
+        }
+        JobStatusMessage job = jobStatusOp.get();
+
+        RowData resultRow =
+                GenericRowData.of(
+                        StringData.fromString(jobId),
+                        StringData.fromString(job.getJobName()),
+                        StringData.fromString(job.getJobState().toString()),
+                        DateTimeUtils.toTimestampData(job.getStartTime(), 3));
+        return ResultFetcher.fromResults(
+                operationHandle,
+                ResolvedSchema.of(
+                        Column.physical(JOB_ID, DataTypes.STRING()),
+                        Column.physical(JOB_NAME, DataTypes.STRING()),
+                        Column.physical(STATUS, DataTypes.STRING()),
+                        Column.physical(START_TIME, DataTypes.TIMESTAMP_WITH_LOCAL_TIME_ZONE())),
+                Collections.singletonList(resultRow));
+    }
+
     /**
      * Retrieves the {@link ClusterClient} from the session and runs the given {@link ClusterAction}
      * against it.
@@ -754,7 +862,7 @@ public class OperationExecutor {
      * @param handle the specified operation handle
      * @param clusterAction the cluster action to run against the retrieved {@link ClusterClient}.
      * @param <ClusterID> type of the cluster id
-     * @param <Result>> type of the result
+     * @param <Result> type of the result
      * @throws SqlExecutionException if something goes wrong
      */
     private <ClusterID, Result> Result runClusterAction(

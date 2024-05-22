@@ -98,8 +98,7 @@ public class DiskTierProducerAgent implements TierProducerAgent, NettyServicePro
             BatchShuffleReadBufferPool bufferPool,
             ScheduledExecutorService ioExecutor,
             int maxRequestedBuffers,
-            Duration bufferRequestTimeout,
-            int maxBufferReadAhead) {
+            Duration bufferRequestTimeout) {
         checkArgument(
                 numBytesPerSegment >= bufferSizeBytes,
                 "One segment should contain at least one buffer.");
@@ -134,8 +133,7 @@ public class DiskTierProducerAgent implements TierProducerAgent, NettyServicePro
                         ioExecutor,
                         maxRequestedBuffers,
                         bufferRequestTimeout,
-                        maxBufferReadAhead,
-                        this::retrieveFirstBufferIndexInSegment,
+                        this::firstBufferIndexToSegmentId,
                         partitionFileReader);
 
         nettyService.registerProducer(partitionId, this);
@@ -143,10 +141,13 @@ public class DiskTierProducerAgent implements TierProducerAgent, NettyServicePro
     }
 
     @Override
-    public boolean tryStartNewSegment(TieredStorageSubpartitionId subpartitionId, int segmentId) {
+    public boolean tryStartNewSegment(
+            TieredStorageSubpartitionId subpartitionId, int segmentId, int minNumBuffers) {
         File filePath = dataFilePath.toFile();
         boolean canStartNewSegment =
-                filePath.getUsableSpace() - ((long) numBuffersPerSegment) * bufferSizeBytes
+                filePath.getUsableSpace()
+                                - (long) Math.max(numBuffersPerSegment, minNumBuffers)
+                                        * bufferSizeBytes
                         > (long) (filePath.getTotalSpace() * minReservedDiskSpaceFraction);
         if (canStartNewSegment) {
             firstBufferIndexInSegment
@@ -161,10 +162,16 @@ public class DiskTierProducerAgent implements TierProducerAgent, NettyServicePro
 
     @Override
     public boolean tryWrite(
-            TieredStorageSubpartitionId subpartitionId, Buffer finishedBuffer, Object bufferOwner) {
+            TieredStorageSubpartitionId subpartitionId,
+            Buffer finishedBuffer,
+            Object bufferOwner,
+            int numRemainingConsecutiveBuffers) {
         int subpartitionIndex = subpartitionId.getSubpartitionId();
         if (currentSubpartitionWriteBuffers[subpartitionIndex] != 0
-                && currentSubpartitionWriteBuffers[subpartitionIndex] + 1 > numBuffersPerSegment) {
+                && currentSubpartitionWriteBuffers[subpartitionIndex]
+                                + 1
+                                + numRemainingConsecutiveBuffers
+                        > numBuffersPerSegment) {
             emitEndOfSegmentEvent(subpartitionIndex);
             currentSubpartitionWriteBuffers[subpartitionIndex] = 0;
             return false;
@@ -173,7 +180,7 @@ public class DiskTierProducerAgent implements TierProducerAgent, NettyServicePro
             memoryManager.transferBufferOwnership(bufferOwner, this, finishedBuffer);
         }
         currentSubpartitionWriteBuffers[subpartitionIndex]++;
-        emitBuffer(finishedBuffer, subpartitionIndex);
+        emitBuffer(finishedBuffer, subpartitionIndex, numRemainingConsecutiveBuffers == 0);
         return true;
     }
 
@@ -212,20 +219,22 @@ public class DiskTierProducerAgent implements TierProducerAgent, NettyServicePro
         }
     }
 
-    private void emitBuffer(Buffer finishedBuffer, int subpartition) {
-        diskCacheManager.append(finishedBuffer, subpartition);
+    private void emitBuffer(Buffer finishedBuffer, int subpartition, boolean flush) {
+        diskCacheManager.append(finishedBuffer, subpartition, flush);
     }
 
     private void releaseResources() {
         if (!isReleased) {
-            firstBufferIndexInSegment.clear();
+            for (Map<Integer, Integer> subFirstBufferIndexInSegment : firstBufferIndexInSegment) {
+                subFirstBufferIndexInSegment.clear();
+            }
             diskCacheManager.release();
             diskIOScheduler.release();
             isReleased = true;
         }
     }
 
-    private Integer retrieveFirstBufferIndexInSegment(int subpartitionId, int bufferIndex) {
+    private Integer firstBufferIndexToSegmentId(int subpartitionId, int bufferIndex) {
         return firstBufferIndexInSegment.size() > subpartitionId
                 ? firstBufferIndexInSegment.get(subpartitionId).get(bufferIndex)
                 : null;

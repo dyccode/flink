@@ -26,6 +26,7 @@ import org.apache.flink.runtime.checkpoint.InflightDataRescalingDescriptor;
 import org.apache.flink.runtime.checkpoint.JobManagerTaskRestore;
 import org.apache.flink.runtime.checkpoint.OperatorSubtaskState;
 import org.apache.flink.runtime.checkpoint.PrioritizedOperatorSubtaskState;
+import org.apache.flink.runtime.checkpoint.SubTaskInitializationMetrics;
 import org.apache.flink.runtime.checkpoint.TaskStateSnapshot;
 import org.apache.flink.runtime.checkpoint.channel.SequentialChannelStateReader;
 import org.apache.flink.runtime.checkpoint.channel.SequentialChannelStateReaderImpl;
@@ -137,6 +138,12 @@ public class TaskStateManagerImpl implements TaskStateManager {
     }
 
     @Override
+    public void reportInitializationMetrics(
+            SubTaskInitializationMetrics subTaskInitializationMetrics) {
+        checkpointResponder.reportInitializationMetrics(jobId, subTaskInitializationMetrics);
+    }
+
+    @Override
     public void reportTaskStateSnapshots(
             @Nonnull CheckpointMetaData checkpointMetaData,
             @Nonnull CheckpointMetrics checkpointMetrics,
@@ -244,6 +251,17 @@ public class TaskStateManagerImpl implements TaskStateManager {
                         jobManagerTaskRestore.getRestoreCheckpointId());
 
         return builder.build();
+    }
+
+    public Optional<OperatorSubtaskState> getSubtaskJobManagerRestoredState(OperatorID operatorID) {
+        if (jobManagerTaskRestore == null) {
+            return Optional.empty();
+        }
+        OperatorSubtaskState state =
+                jobManagerTaskRestore
+                        .getTaskStateSnapshot()
+                        .getSubtaskStateByOperatorID(operatorID);
+        return (state == null) ? Optional.empty() : Optional.of(state);
     }
 
     @Nonnull

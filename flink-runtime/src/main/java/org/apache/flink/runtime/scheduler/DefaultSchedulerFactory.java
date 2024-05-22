@@ -31,9 +31,9 @@ import org.apache.flink.runtime.checkpoint.CheckpointRecoveryFactory;
 import org.apache.flink.runtime.checkpoint.CheckpointsCleaner;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutor;
 import org.apache.flink.runtime.executiongraph.JobStatusListener;
-import org.apache.flink.runtime.executiongraph.failover.flip1.FailoverStrategyFactoryLoader;
-import org.apache.flink.runtime.executiongraph.failover.flip1.RestartBackoffTimeStrategy;
-import org.apache.flink.runtime.executiongraph.failover.flip1.RestartBackoffTimeStrategyFactoryLoader;
+import org.apache.flink.runtime.executiongraph.failover.FailoverStrategyFactoryLoader;
+import org.apache.flink.runtime.executiongraph.failover.RestartBackoffTimeStrategy;
+import org.apache.flink.runtime.executiongraph.failover.RestartBackoffTimeStrategyFactoryLoader;
 import org.apache.flink.runtime.io.network.partition.JobMasterPartitionTracker;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobmaster.ExecutionDeploymentTracker;
@@ -101,6 +101,7 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
                                 jobGraph.getSerializedExecutionConfig()
                                         .deserializeValue(userCodeLoader)
                                         .getRestartStrategy(),
+                                jobGraph.getJobConfiguration(),
                                 jobMasterConfiguration,
                                 jobGraph.isCheckpointingEnabled())
                         .create();
@@ -125,8 +126,7 @@ public class DefaultSchedulerFactory implements SchedulerNGFactory {
 
         final CheckpointsCleaner checkpointsCleaner =
                 new CheckpointsCleaner(
-                        jobMasterConfiguration.getBoolean(
-                                CheckpointingOptions.CLEANER_PARALLEL_MODE));
+                        jobMasterConfiguration.get(CheckpointingOptions.CLEANER_PARALLEL_MODE));
 
         return new DefaultScheduler(
                 log,

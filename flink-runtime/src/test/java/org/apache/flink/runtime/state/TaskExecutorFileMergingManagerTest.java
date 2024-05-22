@@ -18,6 +18,7 @@
 package org.apache.flink.runtime.state;
 
 import org.apache.flink.api.common.JobID;
+import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.checkpoint.filemerging.FileMergingSnapshotManager;
 import org.apache.flink.runtime.checkpoint.filemerging.FileMergingSnapshotManager.SubtaskKey;
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 
+import static org.apache.flink.configuration.CheckpointingOptions.FILE_MERGING_ENABLED;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Tests for {@link TaskExecutorFileMergingManager}. */
@@ -37,31 +39,41 @@ public class TaskExecutorFileMergingManagerTest {
                 new TaskExecutorFileMergingManager();
         JobID job1 = new JobID(1234L, 4321L);
         JobID job2 = new JobID(1234L, 5678L);
-        SubtaskKey key1 = new SubtaskKey("test-op1", 0, 128);
-        SubtaskKey key2 = new SubtaskKey("test-op2", 1, 128);
+        SubtaskKey key1 = new SubtaskKey("test-jobId", "test-op1", 0, 128);
+        SubtaskKey key2 = new SubtaskKey("test-jobId", "test-op2", 1, 128);
         Path checkpointDir1 = new Path(testBaseDir.toString(), "job1");
         Path checkpointDir2 = new Path(testBaseDir.toString(), "job2");
+        int writeBufferSize = 4096;
+        Configuration jobConfig = new Configuration();
+        jobConfig.setBoolean(FILE_MERGING_ENABLED, true);
+        Configuration clusterConfig = new Configuration();
         FileMergingSnapshotManager manager1 =
-                taskExecutorFileMergingManager.fileMergingSnapshotManagerForJob(job1);
+                taskExecutorFileMergingManager.fileMergingSnapshotManagerForJob(
+                        job1, clusterConfig, jobConfig);
         manager1.initFileSystem(
                 checkpointDir1.getFileSystem(),
                 checkpointDir1,
                 new Path(checkpointDir1, "shared"),
-                new Path(checkpointDir1, "taskowned"));
+                new Path(checkpointDir1, "taskowned"),
+                writeBufferSize);
         FileMergingSnapshotManager manager2 =
-                taskExecutorFileMergingManager.fileMergingSnapshotManagerForJob(job1);
+                taskExecutorFileMergingManager.fileMergingSnapshotManagerForJob(
+                        job1, clusterConfig, jobConfig);
         manager2.initFileSystem(
                 checkpointDir1.getFileSystem(),
                 checkpointDir1,
                 new Path(checkpointDir1, "shared"),
-                new Path(checkpointDir1, "taskowned"));
+                new Path(checkpointDir1, "taskowned"),
+                writeBufferSize);
         FileMergingSnapshotManager manager3 =
-                taskExecutorFileMergingManager.fileMergingSnapshotManagerForJob(job2);
+                taskExecutorFileMergingManager.fileMergingSnapshotManagerForJob(
+                        job2, clusterConfig, jobConfig);
         manager3.initFileSystem(
                 checkpointDir2.getFileSystem(),
                 checkpointDir2,
                 new Path(checkpointDir2, "shared"),
-                new Path(checkpointDir2, "taskowned"));
+                new Path(checkpointDir2, "taskowned"),
+                writeBufferSize);
 
         assertThat(manager1).isEqualTo(manager2);
         assertThat(manager1).isNotEqualTo(manager3);

@@ -18,6 +18,7 @@
 
 package org.apache.flink.streaming.api.operators;
 
+import org.apache.flink.annotation.Experimental;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.annotation.PublicEvolving;
 import org.apache.flink.annotation.VisibleForTesting;
@@ -50,6 +51,8 @@ import org.apache.flink.streaming.api.graph.StreamConfig;
 import org.apache.flink.streaming.api.operators.StreamOperatorStateHandler.CheckpointedStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.runtime.streamrecord.LatencyMarker;
+import org.apache.flink.streaming.runtime.streamrecord.RecordAttributes;
+import org.apache.flink.streaming.runtime.streamrecord.RecordAttributesBuilder;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.tasks.ProcessingTimeService;
 import org.apache.flink.streaming.runtime.tasks.StreamTask;
@@ -61,6 +64,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -123,7 +128,7 @@ public abstract class AbstractStreamOperator<OUT>
      *
      * <p>This is for elements from the first input.
      */
-    private transient KeySelector<?, ?> stateKeySelector1;
+    protected transient KeySelector<?, ?> stateKeySelector1;
 
     /**
      * {@code KeySelector} for extracting a key from an element being processed. This is used to
@@ -131,11 +136,11 @@ public abstract class AbstractStreamOperator<OUT>
      *
      * <p>This is for elements from the second input.
      */
-    private transient KeySelector<?, ?> stateKeySelector2;
+    protected transient KeySelector<?, ?> stateKeySelector2;
 
-    private transient StreamOperatorStateHandler stateHandler;
+    protected transient StreamOperatorStateHandler stateHandler;
 
-    private transient InternalTimeServiceManager<?> timeServiceManager;
+    protected transient InternalTimeServiceManager<?> timeServiceManager;
 
     // --------------- Metrics ---------------------------
 
@@ -147,6 +152,9 @@ public abstract class AbstractStreamOperator<OUT>
     // ---------------- time handler ------------------
 
     protected transient ProcessingTimeService processingTimeService;
+
+    protected transient RecordAttributes lastRecordAttributes1;
+    protected transient RecordAttributes lastRecordAttributes2;
 
     // ------------------------------------------------------------------------
     //  Life Cycle
@@ -169,7 +177,7 @@ public abstract class AbstractStreamOperator<OUT>
 
         try {
             Configuration taskManagerConfig = environment.getTaskManagerInfo().getConfiguration();
-            int historySize = taskManagerConfig.getInteger(MetricOptions.LATENCY_HISTORY_SIZE);
+            int historySize = taskManagerConfig.get(MetricOptions.LATENCY_HISTORY_SIZE);
             if (historySize <= 0) {
                 LOG.warn(
                         "{} has been set to a value equal or below 0: {}. Using default.",
@@ -179,7 +187,7 @@ public abstract class AbstractStreamOperator<OUT>
             }
 
             final String configuredGranularity =
-                    taskManagerConfig.getString(MetricOptions.LATENCY_SOURCE_GRANULARITY);
+                    taskManagerConfig.get(MetricOptions.LATENCY_SOURCE_GRANULARITY);
             LatencyStats.Granularity granularity;
             try {
                 granularity =
@@ -225,6 +233,9 @@ public abstract class AbstractStreamOperator<OUT>
 
         stateKeySelector1 = config.getStatePartitioner(0, getUserCodeClassloader());
         stateKeySelector2 = config.getStatePartitioner(1, getUserCodeClassloader());
+
+        lastRecordAttributes1 = RecordAttributes.EMPTY_RECORD_ATTRIBUTES;
+        lastRecordAttributes2 = RecordAttributes.EMPTY_RECORD_ATTRIBUTES;
     }
 
     /**
@@ -242,7 +253,7 @@ public abstract class AbstractStreamOperator<OUT>
     }
 
     @Override
-    public final void initializeState(StreamTaskStateInitializer streamTaskStateManager)
+    public void initializeState(StreamTaskStateInitializer streamTaskStateManager)
             throws Exception {
 
         final TypeSerializer<?> keySerializer =
@@ -263,6 +274,7 @@ public abstract class AbstractStreamOperator<OUT>
                         metrics,
                         config.getManagedMemoryFractionOperatorUseCaseOfSlot(
                                 ManagedMemoryUseCase.STATE_BACKEND,
+                                runtimeContext.getJobConfiguration(),
                                 runtimeContext.getTaskManagerRuntimeInfo().getConfiguration(),
                                 runtimeContext.getUserCodeClassLoader()),
                         isUsingCustomRawKeyedState());
@@ -327,7 +339,7 @@ public abstract class AbstractStreamOperator<OUT>
     }
 
     @Override
-    public final OperatorSnapshotFutures snapshotState(
+    public OperatorSnapshotFutures snapshotState(
             long checkpointId,
             long timestamp,
             CheckpointOptions checkpointOptions,
@@ -406,7 +418,7 @@ public abstract class AbstractStreamOperator<OUT>
      */
     protected String getOperatorName() {
         if (runtimeContext != null) {
-            return runtimeContext.getTaskNameWithSubtasks();
+            return runtimeContext.getTaskInfo().getTaskNameWithSubtasks();
         } else {
             return getClass().getSimpleName();
         }
@@ -648,5 +660,29 @@ public abstract class AbstractStreamOperator<OUT>
 
     protected Optional<InternalTimeServiceManager<?>> getTimeServiceManager() {
         return Optional.ofNullable(timeServiceManager);
+    }
+
+    @Experimental
+    public void processRecordAttributes(RecordAttributes recordAttributes) throws Exception {
+        output.emitRecordAttributes(
+                new RecordAttributesBuilder(Collections.singletonList(recordAttributes)).build());
+    }
+
+    @Experimental
+    public void processRecordAttributes1(RecordAttributes recordAttributes) {
+        lastRecordAttributes1 = recordAttributes;
+        output.emitRecordAttributes(
+                new RecordAttributesBuilder(
+                                Arrays.asList(lastRecordAttributes1, lastRecordAttributes2))
+                        .build());
+    }
+
+    @Experimental
+    public void processRecordAttributes2(RecordAttributes recordAttributes) {
+        lastRecordAttributes2 = recordAttributes;
+        output.emitRecordAttributes(
+                new RecordAttributesBuilder(
+                                Arrays.asList(lastRecordAttributes1, lastRecordAttributes2))
+                        .build());
     }
 }

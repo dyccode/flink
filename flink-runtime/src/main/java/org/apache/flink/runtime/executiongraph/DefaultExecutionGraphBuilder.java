@@ -34,8 +34,8 @@ import org.apache.flink.runtime.checkpoint.hooks.MasterHooks;
 import org.apache.flink.runtime.client.JobExecutionException;
 import org.apache.flink.runtime.client.JobSubmissionException;
 import org.apache.flink.runtime.deployment.TaskDeploymentDescriptorFactory;
-import org.apache.flink.runtime.executiongraph.failover.flip1.partitionrelease.PartitionGroupReleaseStrategy;
-import org.apache.flink.runtime.executiongraph.failover.flip1.partitionrelease.PartitionGroupReleaseStrategyFactoryLoader;
+import org.apache.flink.runtime.executiongraph.failover.partitionrelease.PartitionGroupReleaseStrategy;
+import org.apache.flink.runtime.executiongraph.failover.partitionrelease.PartitionGroupReleaseStrategyFactoryLoader;
 import org.apache.flink.runtime.io.network.partition.JobMasterPartitionTracker;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertex;
@@ -114,7 +114,7 @@ public class DefaultExecutionGraphBuilder {
                         jobGraph.getClasspaths());
 
         final int executionHistorySizeLimit =
-                jobManagerConfig.getInteger(JobManagerOptions.MAX_ATTEMPTS_HISTORY_SIZE);
+                jobManagerConfig.get(JobManagerOptions.MAX_ATTEMPTS_HISTORY_SIZE);
 
         final PartitionGroupReleaseStrategy.Factory partitionGroupReleaseStrategyFactory =
                 PartitionGroupReleaseStrategyFactoryLoader.loadPartitionGroupReleaseStrategyFactory(
@@ -141,6 +141,7 @@ public class DefaultExecutionGraphBuilder {
         // create a new execution graph, if none exists so far
         final DefaultExecutionGraph executionGraph =
                 new DefaultExecutionGraph(
+                        jobGraph.getJobType(),
                         jobInformation,
                         futureExecutor,
                         ioExecutor,
@@ -254,7 +255,7 @@ public class DefaultExecutionGraphBuilder {
                 rootBackend =
                         StateBackendLoader.fromApplicationOrConfigOrDefault(
                                 applicationConfiguredBackend,
-                                snapshotSettings.isChangelogStateBackendEnabled(),
+                                jobGraph.getJobConfiguration(),
                                 jobManagerConfig,
                                 classLoader,
                                 log);
@@ -287,8 +288,8 @@ public class DefaultExecutionGraphBuilder {
                 rootStorage =
                         CheckpointStorageLoader.load(
                                 applicationConfiguredStorage,
-                                null,
                                 rootBackend,
+                                jobGraph.getJobConfiguration(),
                                 jobManagerConfig,
                                 classLoader,
                                 log);
@@ -330,7 +331,6 @@ public class DefaultExecutionGraphBuilder {
 
             final CheckpointCoordinatorConfiguration chkConfig =
                     snapshotSettings.getCheckpointCoordinatorConfiguration();
-            String changelogStorage = jobManagerConfig.getString(STATE_CHANGE_LOG_STORAGE);
 
             executionGraph.enableCheckpointing(
                     chkConfig,
@@ -341,7 +341,7 @@ public class DefaultExecutionGraphBuilder {
                     rootStorage,
                     checkpointStatsTrackerFactory.get(),
                     checkpointsCleaner,
-                    jobManagerConfig.getString(STATE_CHANGE_LOG_STORAGE));
+                    jobManagerConfig.get(STATE_CHANGE_LOG_STORAGE));
         }
 
         return executionGraph;

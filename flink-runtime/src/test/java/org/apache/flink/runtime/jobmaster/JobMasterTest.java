@@ -59,7 +59,8 @@ import org.apache.flink.runtime.executiongraph.AccessExecution;
 import org.apache.flink.runtime.executiongraph.AccessExecutionVertex;
 import org.apache.flink.runtime.executiongraph.ArchivedExecutionGraph;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
-import org.apache.flink.runtime.executiongraph.failover.flip1.FailoverStrategyFactoryLoader;
+import org.apache.flink.runtime.executiongraph.ResultPartitionBytes;
+import org.apache.flink.runtime.executiongraph.failover.FailoverStrategyFactoryLoader;
 import org.apache.flink.runtime.heartbeat.HeartbeatServices;
 import org.apache.flink.runtime.heartbeat.HeartbeatServicesImpl;
 import org.apache.flink.runtime.heartbeat.TestingHeartbeatServices;
@@ -103,6 +104,10 @@ import org.apache.flink.runtime.scheduler.ExecutionGraphInfo;
 import org.apache.flink.runtime.scheduler.SchedulerTestingUtils;
 import org.apache.flink.runtime.scheduler.TestingSchedulerNG;
 import org.apache.flink.runtime.scheduler.TestingSchedulerNGFactory;
+import org.apache.flink.runtime.shuffle.DefaultPartitionWithMetrics;
+import org.apache.flink.runtime.shuffle.DefaultShuffleMetrics;
+import org.apache.flink.runtime.shuffle.NettyShuffleDescriptor;
+import org.apache.flink.runtime.shuffle.PartitionWithMetrics;
 import org.apache.flink.runtime.state.CompletedCheckpointStorageLocation;
 import org.apache.flink.runtime.state.StreamStateHandle;
 import org.apache.flink.runtime.taskexecutor.TaskExecutorGateway;
@@ -115,6 +120,7 @@ import org.apache.flink.runtime.taskmanager.TaskManagerLocation;
 import org.apache.flink.runtime.taskmanager.UnresolvedTaskManagerLocation;
 import org.apache.flink.runtime.testtasks.NoOpInvokable;
 import org.apache.flink.runtime.testutils.CommonTestUtils;
+import org.apache.flink.runtime.util.NettyShuffleDescriptorBuilder;
 import org.apache.flink.runtime.util.TestingFatalErrorHandler;
 import org.apache.flink.testutils.TestingUtils;
 import org.apache.flink.util.FlinkException;
@@ -166,6 +172,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.apache.flink.configuration.RestartStrategyOptions.RestartStrategyType.FIXED_DELAY;
 import static org.apache.flink.core.testutils.FlinkAssertions.assertThatFuture;
 import static org.apache.flink.runtime.executiongraph.ExecutionGraphTestUtils.createExecutionAttemptId;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -233,7 +240,7 @@ class JobMasterTest {
         rmLeaderRetrievalService = new SettableLeaderRetrievalService(null, null);
         haServices.setResourceManagerLeaderRetriever(rmLeaderRetrievalService);
 
-        configuration.setString(
+        configuration.set(
                 BlobServerOptions.STORAGE_DIRECTORY,
                 Files.createTempDirectory(temporaryFolder, UUID.randomUUID().toString())
                         .toString());
@@ -1018,10 +1025,12 @@ class JobMasterTest {
      * if this execution fails.
      */
     @Test
-    @Tag("org.apache.flink.testutils.junit.FailsWithAdaptiveScheduler") // FLINK-21450
+    // The AdaptiveScheduler doesn't support partial recovery but restarts all Executions in case of
+    // a local failure.
+    @Tag("org.apache.flink.testutils.junit.FailsWithAdaptiveScheduler")
     void testRequestNextInputSplitWithLocalFailover() throws Exception {
 
-        configuration.setString(
+        configuration.set(
                 JobManagerOptions.EXECUTION_FAILOVER_STRATEGY,
                 FailoverStrategyFactoryLoader.PIPELINED_REGION_RESTART_STRATEGY_NAME);
 
@@ -1033,10 +1042,10 @@ class JobMasterTest {
 
     @Test
     void testRequestNextInputSplitWithGlobalFailover() throws Exception {
-        configuration.setInteger(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
+        configuration.set(RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_ATTEMPTS, 1);
         configuration.set(
                 RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofSeconds(0));
-        configuration.setString(JobManagerOptions.EXECUTION_FAILOVER_STRATEGY, "full");
+        configuration.set(JobManagerOptions.EXECUTION_FAILOVER_STRATEGY, "full");
 
         final Function<List<List<InputSplit>>, Collection<InputSplit>>
                 expectAllRemainingInputSplits = this::flattenCollection;
@@ -1847,7 +1856,7 @@ class JobMasterTest {
 
     @Test
     void testJobMasterAcceptsSlotsWhenJobIsRestarting() throws Exception {
-        configuration.set(RestartStrategyOptions.RESTART_STRATEGY, "fixed-delay");
+        configuration.set(RestartStrategyOptions.RESTART_STRATEGY, FIXED_DELAY.getMainValue());
         configuration.set(
                 RestartStrategyOptions.RESTART_STRATEGY_FIXED_DELAY_DELAY, Duration.ofDays(1));
         final int numberSlots = 1;
@@ -1896,6 +1905,78 @@ class JobMasterTest {
                                             .createTestingTaskExecutorGateway(),
                                     new LocalUnresolvedTaskManagerLocation()))
                     .hasSize(numberSlots);
+        }
+    }
+
+    @Test
+    void testGetAllPartitionWithMetrics() throws Exception {
+        JobVertex jobVertex = new JobVertex("jobVertex");
+        jobVertex.setInvokableClass(NoOpInvokable.class);
+        jobVertex.setParallelism(1);
+        final JobGraph jobGraph = JobGraphTestUtils.batchJobGraph(jobVertex);
+
+        try (final JobMaster jobMaster =
+                new JobMasterBuilder(jobGraph, rpcService)
+                        .withConfiguration(configuration)
+                        .withHighAvailabilityServices(haServices)
+                        .withHeartbeatServices(heartbeatServices)
+                        .withBlocklistHandlerFactory(
+                                new DefaultBlocklistHandler.Factory(Duration.ofMillis((100L))))
+                        .createJobMaster()) {
+
+            jobMaster.start();
+
+            final JobMasterGateway jobMasterGateway =
+                    jobMaster.getSelfGateway(JobMasterGateway.class);
+
+            NettyShuffleDescriptor shuffleDescriptor =
+                    NettyShuffleDescriptorBuilder.newBuilder().buildLocal();
+            DefaultShuffleMetrics shuffleMetrics =
+                    new DefaultShuffleMetrics(new ResultPartitionBytes(new long[] {1, 2, 3}));
+            Collection<PartitionWithMetrics> defaultPartitionWithMetrics =
+                    Collections.singletonList(
+                            new DefaultPartitionWithMetrics(shuffleDescriptor, shuffleMetrics));
+            final TestingTaskExecutorGateway taskExecutorGateway =
+                    new TestingTaskExecutorGatewayBuilder()
+                            .setRequestPartitionWithMetricsFunction(
+                                    ignored ->
+                                            CompletableFuture.completedFuture(
+                                                    defaultPartitionWithMetrics))
+                            .createTestingTaskExecutorGateway();
+
+            final LocalUnresolvedTaskManagerLocation taskManagerUnresolvedLocation =
+                    new LocalUnresolvedTaskManagerLocation();
+            final Collection<SlotOffer> slotOffers =
+                    registerSlotsAtJobMaster(
+                            1,
+                            jobMasterGateway,
+                            jobGraph.getJobID(),
+                            taskExecutorGateway,
+                            taskManagerUnresolvedLocation);
+            assertThat(slotOffers).hasSize(1);
+
+            waitUntilAllExecutionsAreScheduledOrDeployed(jobMasterGateway);
+
+            PartitionWithMetrics metrics =
+                    jobMasterGateway
+                            .getAllPartitionWithMetricsOnTaskManagers()
+                            .get()
+                            .iterator()
+                            .next();
+            PartitionWithMetrics expectedMetrics = defaultPartitionWithMetrics.iterator().next();
+
+            assertThat(metrics.getPartitionMetrics().getPartitionBytes().getSubpartitionBytes())
+                    .isEqualTo(
+                            expectedMetrics
+                                    .getPartitionMetrics()
+                                    .getPartitionBytes()
+                                    .getSubpartitionBytes());
+            assertThat(metrics.getPartition().getResultPartitionID())
+                    .isEqualTo(expectedMetrics.getPartition().getResultPartitionID());
+            assertThat(metrics.getPartition().isUnknown())
+                    .isEqualTo(expectedMetrics.getPartition().isUnknown());
+            assertThat(metrics.getPartition().storesLocalResourcesOn())
+                    .isEqualTo(expectedMetrics.getPartition().storesLocalResourcesOn());
         }
     }
 

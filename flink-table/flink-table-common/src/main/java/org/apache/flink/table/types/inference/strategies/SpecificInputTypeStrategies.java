@@ -28,6 +28,7 @@ import org.apache.flink.table.types.inference.InputTypeStrategy;
 import org.apache.flink.table.types.logical.LogicalTypeFamily;
 import org.apache.flink.table.types.logical.LogicalTypeRoot;
 import org.apache.flink.table.types.logical.StructuredType;
+import org.apache.flink.table.types.logical.TimestampKind;
 
 import static org.apache.flink.table.types.inference.InputTypeStrategies.LITERAL;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.and;
@@ -37,6 +38,7 @@ import static org.apache.flink.table.types.inference.InputTypeStrategies.logical
 import static org.apache.flink.table.types.inference.InputTypeStrategies.or;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.repeatingSequence;
 import static org.apache.flink.table.types.inference.InputTypeStrategies.symbol;
+import static org.apache.flink.table.types.logical.StructuredType.StructuredComparison;
 
 /**
  * Entry point for specific input type strategies not covered in {@link InputTypeStrategies}.
@@ -59,6 +61,19 @@ public final class SpecificInputTypeStrategies {
     public static final InputTypeStrategy CURRENT_WATERMARK =
             new CurrentWatermarkInputTypeStrategy();
 
+    /** See {@link OverTypeStrategy}. */
+    public static final InputTypeStrategy OVER = new OverTypeStrategy();
+
+    /** See {@link WindowTimeIndictorInputTypeStrategy}. */
+    public static InputTypeStrategy windowTimeIndicator(TimestampKind timestampKind) {
+        return new WindowTimeIndictorInputTypeStrategy(timestampKind);
+    }
+
+    /** See {@link WindowTimeIndictorInputTypeStrategy}. */
+    public static InputTypeStrategy windowTimeIndicator() {
+        return new WindowTimeIndictorInputTypeStrategy(null);
+    }
+
     /** Argument type representing all types supported in a JSON context. */
     public static final ArgumentTypeStrategy JSON_ARGUMENT =
             or(
@@ -74,6 +89,10 @@ public final class SpecificInputTypeStrategies {
     /** Argument type derived from the array element type. */
     public static final ArgumentTypeStrategy ARRAY_ELEMENT_ARG =
             new ArrayElementArgumentTypeStrategy();
+
+    /** Argument type representing the array is comparable. */
+    public static final ArgumentTypeStrategy ARRAY_FULLY_COMPARABLE =
+            new ArrayComparableElementArgumentTypeStrategy(StructuredComparison.FULL);
 
     /**
      * Input strategy for {@link BuiltInFunctionDefinitions#JSON_OBJECT}.
@@ -121,6 +140,9 @@ public final class SpecificInputTypeStrategies {
      */
     public static final InputTypeStrategy TWO_EQUALS_COMPARABLE =
             comparable(ConstantArgumentCount.of(2), StructuredType.StructuredComparison.EQUALS);
+
+    /** Type strategy specific for {@link BuiltInFunctionDefinitions#IN}. */
+    public static final InputTypeStrategy IN = new SubQueryInputTypeStrategy();
 
     private SpecificInputTypeStrategies() {
         // no instantiation

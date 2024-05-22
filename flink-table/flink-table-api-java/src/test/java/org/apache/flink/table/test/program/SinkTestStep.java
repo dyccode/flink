@@ -18,11 +18,14 @@
 
 package org.apache.flink.table.test.program;
 
+import org.apache.flink.table.catalog.TableDistribution;
 import org.apache.flink.types.Row;
 
 import javax.annotation.Nullable;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -34,17 +37,20 @@ public final class SinkTestStep extends TableTestStep {
     public final @Nullable List<Row> expectedAfterRestore;
     public final @Nullable List<String> expectedBeforeRestoreStrings;
     public final @Nullable List<String> expectedAfterRestoreStrings;
+    public final boolean testChangelogData;
 
     SinkTestStep(
             String name,
             List<String> schemaComponents,
+            @Nullable TableDistribution distribution,
             List<String> partitionKeys,
             Map<String, String> options,
             @Nullable List<Row> expectedBeforeRestore,
             @Nullable List<Row> expectedAfterRestore,
             @Nullable List<String> expectedBeforeRestoreStrings,
-            @Nullable List<String> expectedAfterRestoreStrings) {
-        super(name, schemaComponents, partitionKeys, options);
+            @Nullable List<String> expectedAfterRestoreStrings,
+            boolean testChangelogData) {
+        super(name, schemaComponents, distribution, partitionKeys, options);
         if (expectedBeforeRestore != null && expectedAfterRestoreStrings != null) {
             throw new IllegalArgumentException(
                     "You can not mix Row/String representation in before/after restore data.");
@@ -57,6 +63,7 @@ public final class SinkTestStep extends TableTestStep {
         this.expectedAfterRestore = expectedAfterRestore;
         this.expectedBeforeRestoreStrings = expectedBeforeRestoreStrings;
         this.expectedAfterRestoreStrings = expectedAfterRestoreStrings;
+        this.testChangelogData = testChangelogData;
     }
 
     /** Builder for creating a {@link SinkTestStep}. */
@@ -73,7 +80,7 @@ public final class SinkTestStep extends TableTestStep {
             return expectedBeforeRestore.stream().map(Row::toString).collect(Collectors.toList());
         }
 
-        return null;
+        return Collections.emptyList();
     }
 
     public List<String> getExpectedAfterRestoreAsStrings() {
@@ -85,7 +92,13 @@ public final class SinkTestStep extends TableTestStep {
             return expectedAfterRestore.stream().map(Row::toString).collect(Collectors.toList());
         }
 
-        return null;
+        return Collections.emptyList();
+    }
+
+    public List<String> getExpectedAsStrings() {
+        final List<String> data = new ArrayList<>(getExpectedBeforeRestoreAsStrings());
+        data.addAll(getExpectedAfterRestoreAsStrings());
+        return data;
     }
 
     @Override
@@ -97,6 +110,10 @@ public final class SinkTestStep extends TableTestStep {
                         : TestKind.SINK_WITH_RESTORE_DATA;
     }
 
+    public boolean getTestChangelogData() {
+        return testChangelogData;
+    }
+
     /** Builder pattern for {@link SinkTestStep}. */
     public static final class Builder extends AbstractBuilder<Builder> {
 
@@ -105,6 +122,8 @@ public final class SinkTestStep extends TableTestStep {
 
         private List<String> expectedBeforeRestoreStrings;
         private List<String> expectedAfterRestoreStrings;
+
+        private boolean testChangelogData = true;
 
         private Builder(String name) {
             super(name);
@@ -138,16 +157,28 @@ public final class SinkTestStep extends TableTestStep {
             return this;
         }
 
+        public Builder testChangelogData() {
+            this.testChangelogData = true;
+            return this;
+        }
+
+        public Builder testMaterializedData() {
+            this.testChangelogData = false;
+            return this;
+        }
+
         public SinkTestStep build() {
             return new SinkTestStep(
                     name,
                     schemaComponents,
+                    distribution,
                     partitionKeys,
                     options,
                     expectedBeforeRestore,
                     expectedAfterRestore,
                     expectedBeforeRestoreStrings,
-                    expectedAfterRestoreStrings);
+                    expectedAfterRestoreStrings,
+                    testChangelogData);
         }
     }
 }

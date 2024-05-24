@@ -40,6 +40,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.metrics.groups.OperatorMetricGroup;
 import org.apache.flink.runtime.execution.Environment;
 import org.apache.flink.runtime.externalresource.ExternalResourceInfoProvider;
+import org.apache.flink.runtime.jobgraph.JobType;
 import org.apache.flink.runtime.jobgraph.OperatorID;
 import org.apache.flink.runtime.jobgraph.tasks.InputSplitProvider;
 import org.apache.flink.runtime.state.v2.KeyedStateStoreV2;
@@ -169,6 +170,10 @@ public class StreamingRuntimeContext extends AbstractRuntimeUDFContext {
         return taskEnvironment.getJobConfiguration();
     }
 
+    public JobType getJobType() {
+        return taskEnvironment.getJobType();
+    }
+
     @Override
     public Set<ExternalResourceInfo> getExternalResourceInfos(String resourceName) {
         return externalResourceInfoProvider.getExternalResourceInfos(resourceName);
@@ -275,6 +280,15 @@ public class StreamingRuntimeContext extends AbstractRuntimeUDFContext {
         KeyedStateStoreV2 keyedStateStoreV2 =
                 checkPreconditionsAndGetKeyedStateStoreV2(stateProperties);
         return keyedStateStoreV2.getReducingState(stateProperties);
+    }
+
+    public <IN, ACC, OUT>
+            org.apache.flink.api.common.state.v2.AggregatingState<IN, OUT> getAggregatingState(
+                    org.apache.flink.runtime.state.v2.AggregatingStateDescriptor<IN, ACC, OUT>
+                            stateProperties) {
+        KeyedStateStoreV2 keyedStateStoreV2 =
+                checkPreconditionsAndGetKeyedStateStoreV2(stateProperties);
+        return keyedStateStoreV2.getAggregatingState(stateProperties);
     }
 
     private KeyedStateStoreV2 checkPreconditionsAndGetKeyedStateStoreV2(

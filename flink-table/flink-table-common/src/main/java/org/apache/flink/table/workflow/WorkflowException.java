@@ -19,13 +19,16 @@
 package org.apache.flink.table.workflow;
 
 import org.apache.flink.annotation.PublicEvolving;
+import org.apache.flink.util.FlinkException;
 
 /**
  * A workflow-related operation exception to materialized table, including create, suspend, resume,
  * drop workflow operation, etc.
  */
 @PublicEvolving
-public class WorkflowException extends Exception {
+public class WorkflowException extends FlinkException {
+
+    private static final long serialVersionUID = 1L;
 
     public WorkflowException(String message) {
         super(message);

@@ -51,7 +51,6 @@ import static org.apache.flink.api.common.BatchShuffleMode.ALL_EXCHANGES_HYBRID_
 import static org.apache.flink.configuration.ExecutionOptions.BATCH_SHUFFLE_MODE;
 import static org.apache.flink.configuration.NettyShuffleEnvironmentOptions.NETWORK_HYBRID_SHUFFLE_ENABLE_MEMORY_DECOUPLING;
 import static org.apache.flink.configuration.NettyShuffleEnvironmentOptions.NETWORK_HYBRID_SHUFFLE_ENABLE_NEW_MODE;
-import static org.apache.flink.configuration.NettyShuffleEnvironmentOptions.NETWORK_HYBRID_SHUFFLE_REMOTE_STORAGE_BASE_PATH;
 import static org.apache.flink.util.Preconditions.checkArgument;
 
 /** Configuration object for the network stack. */
@@ -119,6 +118,8 @@ public class NettyShuffleEnvironmentConfiguration {
 
     private final long hybridShuffleNumRetainedInMemoryRegionsMax;
 
+    private final boolean isMemoryDecouplingEnabled;
+
     private final TieredStorageConfiguration tieredStorageConfiguration;
 
     public NettyShuffleEnvironmentConfiguration(
@@ -147,6 +148,7 @@ public class NettyShuffleEnvironmentConfiguration {
             int maxOverdraftBuffersPerGate,
             int hybridShuffleSpilledIndexRegionGroupSize,
             long hybridShuffleNumRetainedInMemoryRegionsMax,
+            boolean isMemoryDecouplingEnabled,
             @Nullable TieredStorageConfiguration tieredStorageConfiguration) {
 
         this.numNetworkBuffers = numNetworkBuffers;
@@ -175,6 +177,7 @@ public class NettyShuffleEnvironmentConfiguration {
         this.hybridShuffleSpilledIndexRegionGroupSize = hybridShuffleSpilledIndexRegionGroupSize;
         this.hybridShuffleNumRetainedInMemoryRegionsMax =
                 hybridShuffleNumRetainedInMemoryRegionsMax;
+        this.isMemoryDecouplingEnabled = isMemoryDecouplingEnabled;
         this.tieredStorageConfiguration = tieredStorageConfiguration;
     }
 
@@ -280,6 +283,10 @@ public class NettyShuffleEnvironmentConfiguration {
         return hybridShuffleNumRetainedInMemoryRegionsMax;
     }
 
+    public boolean isMemoryDecouplingEnabled() {
+        return isMemoryDecouplingEnabled;
+    }
+
     public int getHybridShuffleSpilledIndexRegionGroupSize() {
         return hybridShuffleSpilledIndexRegionGroupSize;
     }
@@ -368,18 +375,30 @@ public class NettyShuffleEnvironmentConfiguration {
         Collections.shuffle(shuffleDirs);
 
         Duration requestSegmentsTimeout =
-                Duration.ofMillis(
-                        configuration.get(
-                                NettyShuffleEnvironmentOptions
-                                        .NETWORK_EXCLUSIVE_BUFFERS_REQUEST_TIMEOUT_MILLISECONDS));
+                configuration.get(NettyShuffleEnvironmentOptions.NETWORK_BUFFERS_REQUEST_TIMEOUT);
 
         BoundedBlockingSubpartitionType blockingSubpartitionType =
                 getBlockingSubpartitionType(configuration);
 
-        boolean batchShuffleCompressionEnabled =
-                configuration.get(NettyShuffleEnvironmentOptions.BATCH_SHUFFLE_COMPRESSION_ENABLED);
         CompressionCodec compressionCodec =
                 configuration.get(NettyShuffleEnvironmentOptions.SHUFFLE_COMPRESSION_CODEC);
+
+        boolean batchShuffleCompressionEnabled;
+        if (compressionCodec == CompressionCodec.NONE) {
+            batchShuffleCompressionEnabled = false;
+        } else {
+            batchShuffleCompressionEnabled =
+                    configuration.get(
+                            NettyShuffleEnvironmentOptions.BATCH_SHUFFLE_COMPRESSION_ENABLED);
+
+            if (!batchShuffleCompressionEnabled) {
+                LOG.warn(
+                        "Deprecated configuration key {} is used to disable the compression. "
+                                + "Please set the {} to \"None\" to disable the compression.",
+                        NettyShuffleEnvironmentOptions.BATCH_SHUFFLE_COMPRESSION_ENABLED.key(),
+                        NettyShuffleEnvironmentOptions.SHUFFLE_COMPRESSION_CODEC.key());
+            }
+        }
 
         int maxNumConnections =
                 Math.max(
@@ -400,6 +419,9 @@ public class NettyShuffleEnvironmentConfiguration {
                         NettyShuffleEnvironmentOptions
                                 .HYBRID_SHUFFLE_NUM_RETAINED_IN_MEMORY_REGIONS_MAX);
 
+        boolean isMemoryDecouplingEnabled =
+                configuration.get(NETWORK_HYBRID_SHUFFLE_ENABLE_MEMORY_DECOUPLING);
+
         checkArgument(buffersPerChannel >= 0, "Must be non-negative.");
         checkArgument(
                 !maxRequiredBuffersPerGate.isPresent() || maxRequiredBuffersPerGate.get() >= 1,
@@ -418,14 +440,7 @@ public class NettyShuffleEnvironmentConfiguration {
                         || configuration.get(BATCH_SHUFFLE_MODE) == ALL_EXCHANGES_HYBRID_SELECTIVE)
                 && configuration.get(NETWORK_HYBRID_SHUFFLE_ENABLE_NEW_MODE)) {
             tieredStorageConfiguration =
-                    TieredStorageConfiguration.builder(
-                                    pageSize,
-                                    configuration.get(
-                                            NETWORK_HYBRID_SHUFFLE_REMOTE_STORAGE_BASE_PATH))
-                            .setMemoryDecouplingEnabled(
-                                    configuration.get(
-                                            NETWORK_HYBRID_SHUFFLE_ENABLE_MEMORY_DECOUPLING))
-                            .build();
+                    TieredStorageConfiguration.fromConfiguration(configuration);
         }
         return new NettyShuffleEnvironmentConfiguration(
                 numberOfNetworkBuffers,
@@ -453,6 +468,7 @@ public class NettyShuffleEnvironmentConfiguration {
                 maxOverdraftBuffersPerGate,
                 hybridShuffleSpilledIndexSegmentSize,
                 hybridShuffleNumRetainedInMemoryRegionsMax,
+                isMemoryDecouplingEnabled,
                 tieredStorageConfiguration);
     }
 

@@ -34,9 +34,8 @@ public class CreateEmbeddedSchedulerWorkflowRequestBody implements RequestBody {
 
     private static final String FIELD_NAME_MATERIALIZED_TABLE = "materializedTableIdentifier";
     private static final String FIELD_NAME_CRON_EXPRESSION = "cronExpression";
-    private static final String FIELD_NAME_DYNAMIC_OPTIONS = "dynamicOptions";
+    private static final String FIELD_NAME_INIT_CONFIG = "initConfig";
     private static final String FIELD_NAME_EXECUTION_CONFIG = "executionConfig";
-    private static final String FIELD_NAME_SCHEDULE_TIME = "customScheduleTime";
     private static final String FIELD_NAME_REST_ENDPOINT_URL = "restEndpointUrl";
 
     @JsonProperty(FIELD_NAME_MATERIALIZED_TABLE)
@@ -45,34 +44,28 @@ public class CreateEmbeddedSchedulerWorkflowRequestBody implements RequestBody {
     @JsonProperty(FIELD_NAME_CRON_EXPRESSION)
     private final String cronExpression;
 
-    @JsonProperty(FIELD_NAME_DYNAMIC_OPTIONS)
-    @Nullable
-    private final Map<String, String> dynamicOptions;
+    @JsonProperty(FIELD_NAME_INIT_CONFIG)
+    private final Map<String, String> initConfig;
 
     @JsonProperty(FIELD_NAME_EXECUTION_CONFIG)
     @Nullable
     private final Map<String, String> executionConfig;
 
-    @JsonProperty(FIELD_NAME_SCHEDULE_TIME)
-    @Nullable
-    private final String customScheduleTime;
-
+    @JsonProperty(FIELD_NAME_REST_ENDPOINT_URL)
     private final String restEndpointUrl;
 
     @JsonCreator
     public CreateEmbeddedSchedulerWorkflowRequestBody(
             @JsonProperty(FIELD_NAME_MATERIALIZED_TABLE) String materializedTableIdentifier,
             @JsonProperty(FIELD_NAME_CRON_EXPRESSION) String cronExpression,
-            @Nullable @JsonProperty(FIELD_NAME_DYNAMIC_OPTIONS) Map<String, String> dynamicOptions,
+            @Nullable @JsonProperty(FIELD_NAME_INIT_CONFIG) Map<String, String> initConfig,
             @Nullable @JsonProperty(FIELD_NAME_EXECUTION_CONFIG)
                     Map<String, String> executionConfig,
-            @Nullable @JsonProperty(FIELD_NAME_SCHEDULE_TIME) String customScheduleTime,
             @JsonProperty(FIELD_NAME_REST_ENDPOINT_URL) String restEndpointUrl) {
         this.materializedTableIdentifier = materializedTableIdentifier;
         this.cronExpression = cronExpression;
-        this.dynamicOptions = dynamicOptions;
+        this.initConfig = initConfig;
         this.executionConfig = executionConfig;
-        this.customScheduleTime = customScheduleTime;
         this.restEndpointUrl = restEndpointUrl;
     }
 
@@ -81,18 +74,13 @@ public class CreateEmbeddedSchedulerWorkflowRequestBody implements RequestBody {
     }
 
     @Nullable
-    public Map<String, String> getDynamicOptions() {
-        return dynamicOptions;
+    public Map<String, String> getInitConfig() {
+        return initConfig;
     }
 
     @Nullable
     public Map<String, String> getExecutionConfig() {
         return executionConfig;
-    }
-
-    @Nullable
-    public String getCustomScheduleTime() {
-        return customScheduleTime;
     }
 
     public String getCronExpression() {

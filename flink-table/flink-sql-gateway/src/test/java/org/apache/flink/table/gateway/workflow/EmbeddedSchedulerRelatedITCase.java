@@ -33,6 +33,7 @@ import org.apache.flink.table.gateway.rest.header.materializedtable.scheduler.Su
 import org.apache.flink.table.gateway.rest.message.materializedtable.scheduler.CreateEmbeddedSchedulerWorkflowRequestBody;
 import org.apache.flink.table.gateway.rest.message.materializedtable.scheduler.CreateEmbeddedSchedulerWorkflowResponseBody;
 import org.apache.flink.table.gateway.rest.message.materializedtable.scheduler.EmbeddedSchedulerWorkflowRequestBody;
+import org.apache.flink.table.gateway.rest.message.materializedtable.scheduler.ResumeEmbeddedSchedulerWorkflowRequestBody;
 import org.apache.flink.table.workflow.CreatePeriodicRefreshWorkflow;
 import org.apache.flink.table.workflow.CreateRefreshWorkflow;
 import org.apache.flink.table.workflow.DeleteRefreshWorkflow;
@@ -47,6 +48,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -90,7 +92,6 @@ public class EmbeddedSchedulerRelatedITCase extends RestAPIITCaseBase {
                 new CreateEmbeddedSchedulerWorkflowRequestBody(
                         materializedTableIdentifier.asSerializableString(),
                         cronExpression,
-                        null,
                         null,
                         null,
                         gatewayRestEndpointURL);
@@ -193,11 +194,16 @@ public class EmbeddedSchedulerRelatedITCase extends RestAPIITCaseBase {
 
     @Test
     void testResumeNonExistsWorkflow() throws Exception {
+        ResumeEmbeddedSchedulerWorkflowRequestBody resumeRequestBody =
+                new ResumeEmbeddedSchedulerWorkflowRequestBody(
+                        nonExistsWorkflow.getWorkflowName(),
+                        nonExistsWorkflow.getWorkflowGroup(),
+                        null);
         CompletableFuture<EmptyResponseBody> suspendFuture =
                 sendRequest(
                         ResumeEmbeddedSchedulerWorkflowHeaders.getInstance(),
                         EmptyMessageParameters.getInstance(),
-                        nonExistsWorkflow);
+                        resumeRequestBody);
 
         assertThatFuture(suspendFuture)
                 .failsWithin(5, TimeUnit.SECONDS)
@@ -221,18 +227,7 @@ public class EmbeddedSchedulerRelatedITCase extends RestAPIITCaseBase {
                         EmptyMessageParameters.getInstance(),
                         nonExistsWorkflow);
 
-        assertThatFuture(suspendFuture)
-                .failsWithin(5, TimeUnit.SECONDS)
-                .withThrowableOfType(ExecutionException.class)
-                .withCauseInstanceOf(RestClientException.class)
-                .withMessageContaining(
-                        "Failed to delete a non-existent quartz schedule job: default_group.non-exists.")
-                .satisfies(
-                        e ->
-                                assertThat(
-                                                ((RestClientException) e.getCause())
-                                                        .getHttpResponseStatus())
-                                        .isEqualTo(HttpResponseStatus.INTERNAL_SERVER_ERROR));
+        assertThatFuture(suspendFuture).succeedsWithin(5, TimeUnit.SECONDS);
     }
 
     @Test
@@ -265,7 +260,7 @@ public class EmbeddedSchedulerRelatedITCase extends RestAPIITCaseBase {
 
         // resume, just to verify suspend function can work
         ResumeRefreshWorkflow<EmbeddedRefreshHandler> resumeRefreshWorkflow =
-                new ResumeRefreshWorkflow<>(actual);
+                new ResumeRefreshWorkflow<>(actual, Collections.emptyMap());
         embeddedWorkflowScheduler.modifyRefreshWorkflow(resumeRefreshWorkflow);
 
         // delete, just to verify suspend function can work
@@ -297,7 +292,7 @@ public class EmbeddedSchedulerRelatedITCase extends RestAPIITCaseBase {
     }
 
     @Test
-    void testNonExistsWorkflowByWorkflowSchedulerInterface() {
+    void testNonExistsWorkflowByWorkflowSchedulerInterface() throws WorkflowException {
         // suspend case
         assertThatThrownBy(
                         () ->
@@ -314,7 +309,8 @@ public class EmbeddedSchedulerRelatedITCase extends RestAPIITCaseBase {
         assertThatThrownBy(
                         () ->
                                 embeddedWorkflowScheduler.modifyRefreshWorkflow(
-                                        new ResumeRefreshWorkflow<>(nonExistsHandler)))
+                                        new ResumeRefreshWorkflow<>(
+                                                nonExistsHandler, Collections.emptyMap())))
                 .isInstanceOf(WorkflowException.class)
                 .hasMessage(
                         "Failed to resume refresh workflow {\n"
@@ -323,16 +319,8 @@ public class EmbeddedSchedulerRelatedITCase extends RestAPIITCaseBase {
                                 + "}.");
 
         // delete case
-        assertThatThrownBy(
-                        () ->
-                                embeddedWorkflowScheduler.deleteRefreshWorkflow(
-                                        new DeleteRefreshWorkflow<>(nonExistsHandler)))
-                .isInstanceOf(WorkflowException.class)
-                .hasMessage(
-                        "Failed to delete refresh workflow {\n"
-                                + "  workflowName: non-exits,\n"
-                                + "  workflowGroup: default_group\n"
-                                + "}.");
+        embeddedWorkflowScheduler.deleteRefreshWorkflow(
+                new DeleteRefreshWorkflow<>(nonExistsHandler));
     }
 
     /** Just used for test. */

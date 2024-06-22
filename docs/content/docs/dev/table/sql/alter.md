@@ -28,7 +28,7 @@ under the License.
 
 
 
-ALTER statements are used to modified a registered table/view/function definition in the [Catalog]({{< ref "docs/dev/table/catalogs" >}}).
+ALTER statements are used to modify the definition of a table, view or function that has already been registered in the [Catalog]({{< ref "docs/dev/table/catalogs" >}}), or the definition of a catalog itself.
 
 Flink SQL supports the following ALTER statements for now:
 
@@ -36,6 +36,7 @@ Flink SQL supports the following ALTER statements for now:
 - ALTER VIEW
 - ALTER DATABASE
 - ALTER FUNCTION
+- ALTER CATALOG
 
 ## Run an ALTER statement
 
@@ -540,10 +541,15 @@ If the function doesn't exist, nothing happens.
 
 Language tag to instruct flink runtime how to execute the function. Currently only JAVA, SCALA and PYTHON are supported, the default language for a function is JAVA.
 
+{{< top >}}
+
 ## ALTER CATALOG
 
 ```sql
-ALTER CATALOG catalog_name SET (key1=val1, ...)
+ALTER CATALOG catalog_name 
+    SET (key1=val1, ...)
+  | RESET (key1, ...)
+  | COMMENT 'comment'
 ```
 
 ### SET
@@ -555,6 +561,27 @@ The following examples illustrate the usage of the `SET` statements.
 ```sql
 -- set 'default-database'
 ALTER CATALOG cat2 SET ('default-database'='db');
+```
+
+### RESET
+
+Reset one or more properties to its default value in the specified catalog.
+
+The following examples illustrate the usage of the `RESET` statements.
+
+```sql
+-- reset 'default-database'
+ALTER CATALOG cat2 RESET ('default-database');
+```
+
+### COMMENT
+
+Set comment in the specified catalog. If the comment is already set in the catalog, override the old value with the new one.
+
+The following examples illustrate the usage of the `COMMENT` statements.
+
+```sql
+ALTER CATALOG cat2 COMMENT 'comment for catalog ''cat2''';
 ```
 
 {{< top >}}

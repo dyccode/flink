@@ -42,6 +42,8 @@ import org.apache.flink.runtime.io.network.partition.hybrid.tiered.common.Tiered
 import org.apache.flink.runtime.io.network.partition.hybrid.tiered.netty.TieredStorageNettyServiceImpl;
 import org.apache.flink.runtime.io.network.partition.hybrid.tiered.storage.TieredStorageConsumerClient;
 import org.apache.flink.runtime.io.network.partition.hybrid.tiered.storage.TieredStorageConsumerSpec;
+import org.apache.flink.runtime.io.network.partition.hybrid.tiered.tier.TierShuffleDescriptor;
+import org.apache.flink.runtime.io.network.partition.hybrid.tiered.tier.UnknownTierShuffleDescriptor;
 import org.apache.flink.runtime.metrics.MetricNames;
 import org.apache.flink.runtime.shuffle.NettyShuffleDescriptor;
 import org.apache.flink.runtime.shuffle.NettyShuffleUtils;
@@ -68,6 +70,7 @@ import java.util.Optional;
 
 import static org.apache.flink.runtime.io.network.partition.consumer.InputGateSpecUtils.createGateBuffersSpec;
 import static org.apache.flink.runtime.shuffle.ShuffleUtils.applyWithShuffleTypeCheck;
+import static org.apache.flink.util.Preconditions.checkNotNull;
 
 /** Factory for {@link SingleInputGate} to use in {@link NettyShuffleEnvironment}. */
 public class SingleInputGateFactory {
@@ -101,6 +104,8 @@ public class SingleInputGateFactory {
 
     private final int networkBufferSize;
 
+    private final boolean memoryDecouplingEnabled;
+
     private final BufferDebloatConfiguration debloatConfiguration;
 
     /** The following attributes will be null if tiered storage shuffle is disabled. */
@@ -129,6 +134,7 @@ public class SingleInputGateFactory {
         this.batchShuffleCompressionEnabled = networkConfig.isBatchShuffleCompressionEnabled();
         this.compressionCodec = networkConfig.getCompressionCodec();
         this.networkBufferSize = networkConfig.networkBufferSize();
+        this.memoryDecouplingEnabled = networkConfig.isMemoryDecouplingEnabled();
         this.connectionManager = connectionManager;
         this.partitionManager = partitionManager;
         this.taskEventPublisher = taskEventPublisher;
@@ -161,7 +167,8 @@ public class SingleInputGateFactory {
                         floatingNetworkBuffersPerGate,
                         igdd.getConsumedPartitionType(),
                         calculateNumNonLocalChannels(igdd, isSharedInputChannelSupported),
-                        tieredStorageConfiguration);
+                        tieredStorageConfiguration != null,
+                        memoryDecouplingEnabled);
         SupplierWithException<BufferPool, IOException> bufferPoolFactory =
                 createBufferPoolFactory(
                         networkBufferPool,
@@ -255,6 +262,7 @@ public class SingleInputGateFactory {
 
         int channelIdx = 0;
         final List<TieredStorageConsumerSpec> tieredStorageConsumerSpecs = new ArrayList<>();
+        List<List<TierShuffleDescriptor>> tierShuffleDescriptors = new ArrayList<>();
         for (ShuffleDescriptor descriptor : shuffleDescriptors) {
             TieredStoragePartitionId partitionId =
                     TieredStorageIdMappingUtils.convertId(descriptor.getResultPartitionID());
@@ -269,8 +277,11 @@ public class SingleInputGateFactory {
                                 channelStatistics,
                                 metrics);
                 if (tieredStorageConfiguration != null) {
+                    addTierShuffleDescriptors(tierShuffleDescriptors, descriptor);
+
                     tieredStorageConsumerSpecs.add(
                             new TieredStorageConsumerSpec(
+                                    inputGate.getInputGateIndex(),
                                     partitionId,
                                     new TieredStorageInputChannelId(channelIdx),
                                     subpartitionIndexSet));
@@ -288,8 +299,11 @@ public class SingleInputGateFactory {
                                     channelStatistics,
                                     metrics);
                     if (tieredStorageConfiguration != null) {
+                        addTierShuffleDescriptors(tierShuffleDescriptors, descriptor);
+
                         tieredStorageConsumerSpecs.add(
                                 new TieredStorageConsumerSpec(
+                                        inputGate.getInputGateIndex(),
                                         partitionId,
                                         new TieredStorageInputChannelId(channelIdx),
                                         new ResultSubpartitionIndexSet(subpartitionIndex)));
@@ -306,6 +320,7 @@ public class SingleInputGateFactory {
                     new TieredStorageConsumerClient(
                             tieredStorageConfiguration.getTierFactories(),
                             tieredStorageConsumerSpecs,
+                            tierShuffleDescriptors,
                             tieredStorageNettyService);
             inputGate.setTieredStorageService(
                     tieredStorageConsumerSpecs,
@@ -433,6 +448,24 @@ public class SingleInputGateFactory {
 
     private boolean isLocalInputChannel(NettyShuffleDescriptor inputChannelDescriptor) {
         return inputChannelDescriptor.isLocalTo(taskExecutorResourceId);
+    }
+
+    private void addTierShuffleDescriptors(
+            List<List<TierShuffleDescriptor>> tierShuffleDescriptors,
+            ShuffleDescriptor descriptor) {
+        if (descriptor instanceof NettyShuffleDescriptor) {
+            tierShuffleDescriptors.add(
+                    ((NettyShuffleDescriptor) descriptor).getTierShuffleDescriptors());
+        } else if (descriptor.isUnknown()) {
+            List<TierShuffleDescriptor> unknownDescriptors = new ArrayList<>();
+            int numTiers = checkNotNull(tieredStorageConfiguration).getTierFactories().size();
+            for (int i = 0; i < numTiers; i++) {
+                unknownDescriptors.add(UnknownTierShuffleDescriptor.INSTANCE);
+            }
+            tierShuffleDescriptors.add(unknownDescriptors);
+        } else {
+            throw new IllegalArgumentException("Unsupported shuffle descriptor type " + descriptor);
+        }
     }
 
     @VisibleForTesting

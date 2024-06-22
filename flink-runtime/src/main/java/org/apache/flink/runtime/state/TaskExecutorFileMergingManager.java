@@ -24,7 +24,9 @@ import org.apache.flink.runtime.checkpoint.filemerging.FileMergingSnapshotManage
 import org.apache.flink.runtime.checkpoint.filemerging.FileMergingSnapshotManagerBuilder;
 import org.apache.flink.runtime.checkpoint.filemerging.FileMergingType;
 import org.apache.flink.runtime.checkpoint.filemerging.PhysicalFilePool;
+import org.apache.flink.runtime.clusterframework.types.ResourceID;
 import org.apache.flink.runtime.executiongraph.ExecutionAttemptID;
+import org.apache.flink.runtime.metrics.groups.TaskManagerJobMetricGroup;
 import org.apache.flink.util.ShutdownHookUtil;
 
 import org.slf4j.Logger;
@@ -42,6 +44,7 @@ import java.util.Set;
 import static org.apache.flink.configuration.CheckpointingOptions.FILE_MERGING_ACROSS_BOUNDARY;
 import static org.apache.flink.configuration.CheckpointingOptions.FILE_MERGING_ENABLED;
 import static org.apache.flink.configuration.CheckpointingOptions.FILE_MERGING_MAX_FILE_SIZE;
+import static org.apache.flink.configuration.CheckpointingOptions.FILE_MERGING_MAX_SPACE_AMPLIFICATION;
 import static org.apache.flink.configuration.CheckpointingOptions.FILE_MERGING_POOL_BLOCKING;
 
 /**
@@ -81,9 +84,11 @@ public class TaskExecutorFileMergingManager {
      */
     public @Nullable FileMergingSnapshotManager fileMergingSnapshotManagerForTask(
             @Nonnull JobID jobId,
+            @Nonnull ResourceID tmResourceId,
             @Nonnull ExecutionAttemptID executionAttemptID,
             Configuration clusterConfiguration,
-            Configuration jobConfiguration) {
+            Configuration jobConfiguration,
+            TaskManagerJobMetricGroup metricGroup) {
         boolean mergingEnabled =
                 jobConfiguration
                         .getOptional(FILE_MERGING_ENABLED)
@@ -118,15 +123,24 @@ public class TaskExecutorFileMergingManager {
                                 .getOptional(FILE_MERGING_POOL_BLOCKING)
                                 .orElse(clusterConfiguration.get(FILE_MERGING_POOL_BLOCKING));
 
+                Float spaceAmplification =
+                        jobConfiguration
+                                .getOptional(FILE_MERGING_MAX_SPACE_AMPLIFICATION)
+                                .orElse(
+                                        clusterConfiguration.get(
+                                                FILE_MERGING_MAX_SPACE_AMPLIFICATION));
+
                 fileMergingSnapshotManagerAndRetainedExecutions =
                         Tuple2.of(
                                 new FileMergingSnapshotManagerBuilder(
-                                                jobId.toString(), fileMergingType)
+                                                jobId, tmResourceId, fileMergingType)
                                         .setMaxFileSize(maxFileSize.getBytes())
                                         .setFilePoolType(
                                                 usingBlockingPool
                                                         ? PhysicalFilePool.Type.BLOCKING
                                                         : PhysicalFilePool.Type.NON_BLOCKING)
+                                        .setMaxSpaceAmplification(spaceAmplification)
+                                        .setMetricGroup(metricGroup)
                                         .build(),
                                 new HashSet<>());
                 fileMergingSnapshotManagerByJobId.put(

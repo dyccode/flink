@@ -26,7 +26,6 @@ import org.apache.flink.configuration.ReadableConfig;
 import org.apache.flink.configuration.StateChangelogOptions;
 import org.apache.flink.core.fs.Path;
 import org.apache.flink.runtime.minicluster.MiniCluster;
-import org.apache.flink.streaming.api.environment.ExecutionCheckpointingOptions;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironmentFactory;
 import org.apache.flink.test.util.MiniClusterPipelineExecutorServiceLoader;
@@ -113,14 +112,16 @@ public class TestStreamEnvironment extends StreamExecutionEnvironment {
     private static void randomizeConfiguration(MiniCluster miniCluster, Configuration conf) {
         // randomize ITTests for enabling unaligned checkpoint
         if (RANDOMIZE_CHECKPOINTING_CONFIG) {
-            randomize(conf, ExecutionCheckpointingOptions.ENABLE_UNALIGNED, true, false);
+            randomize(conf, CheckpointingOptions.ENABLE_UNALIGNED, true, false);
             randomize(
                     conf,
-                    ExecutionCheckpointingOptions.ALIGNED_CHECKPOINT_TIMEOUT,
+                    CheckpointingOptions.ALIGNED_CHECKPOINT_TIMEOUT,
                     Duration.ofSeconds(0),
                     Duration.ofMillis(100),
                     Duration.ofSeconds(2));
             randomize(conf, CheckpointingOptions.CLEANER_PARALLEL_MODE, true, false);
+            randomize(
+                    conf, CheckpointingOptions.ENABLE_UNALIGNED_INTERRUPTIBLE_TIMERS, true, false);
             randomize(conf, ExecutionOptions.SNAPSHOT_COMPRESSION, true, false);
             if (!conf.contains(CheckpointingOptions.FILE_MERGING_ENABLED)) {
                 randomize(conf, CheckpointingOptions.FILE_MERGING_ENABLED, true);

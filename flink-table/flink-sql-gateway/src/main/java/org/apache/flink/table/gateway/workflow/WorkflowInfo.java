@@ -21,8 +21,6 @@ package org.apache.flink.table.gateway.workflow;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonCreator;
 import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.annotation.JsonProperty;
 
-import javax.annotation.Nullable;
-
 import java.util.Map;
 import java.util.Objects;
 
@@ -37,9 +35,8 @@ public class WorkflowInfo {
     private final String materializedTableIdentifier;
 
     private final Map<String, String> dynamicOptions;
+    private final Map<String, String> initConfig;
     private final Map<String, String> executionConfig;
-
-    private final @Nullable String customSchedulerTime;
 
     private final String restEndpointUrl;
 
@@ -47,13 +44,13 @@ public class WorkflowInfo {
     public WorkflowInfo(
             @JsonProperty("materializedTableIdentifier") String materializedTableIdentifier,
             @JsonProperty("dynamicOptions") Map<String, String> dynamicOptions,
+            @JsonProperty("initConfig") Map<String, String> initConfig,
             @JsonProperty("executionConfig") Map<String, String> executionConfig,
-            @JsonProperty("customSchedulerTime") @Nullable String customSchedulerTime,
             @JsonProperty("restEndpointUrl") String restEndpointUrl) {
         this.materializedTableIdentifier = materializedTableIdentifier;
         this.dynamicOptions = dynamicOptions;
+        this.initConfig = initConfig;
         this.executionConfig = executionConfig;
-        this.customSchedulerTime = customSchedulerTime;
         this.restEndpointUrl = restEndpointUrl;
     }
 
@@ -65,13 +62,12 @@ public class WorkflowInfo {
         return dynamicOptions;
     }
 
-    public Map<String, String> getExecutionConfig() {
-        return executionConfig;
+    public Map<String, String> getInitConfig() {
+        return initConfig;
     }
 
-    @Nullable
-    public String getCustomSchedulerTime() {
-        return customSchedulerTime;
+    public Map<String, String> getExecutionConfig() {
+        return executionConfig;
     }
 
     public String getRestEndpointUrl() {
@@ -88,9 +84,8 @@ public class WorkflowInfo {
         }
         WorkflowInfo that = (WorkflowInfo) o;
         return Objects.equals(materializedTableIdentifier, that.materializedTableIdentifier)
-                && Objects.equals(dynamicOptions, that.dynamicOptions)
+                && Objects.equals(initConfig, that.initConfig)
                 && Objects.equals(executionConfig, that.executionConfig)
-                && Objects.equals(customSchedulerTime, that.customSchedulerTime)
                 && Objects.equals(restEndpointUrl, that.restEndpointUrl);
     }
 
@@ -99,8 +94,8 @@ public class WorkflowInfo {
         return Objects.hash(
                 materializedTableIdentifier,
                 dynamicOptions,
+                initConfig,
                 executionConfig,
-                customSchedulerTime,
                 restEndpointUrl);
     }
 
@@ -112,11 +107,10 @@ public class WorkflowInfo {
                 + '\''
                 + ", dynamicOptions="
                 + dynamicOptions
+                + ", initConfig="
+                + initConfig
                 + ", executionConfig="
                 + executionConfig
-                + ", customSchedulerTime='"
-                + customSchedulerTime
-                + '\''
                 + ", restEndpointUrl='"
                 + restEndpointUrl
                 + '\''

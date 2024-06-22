@@ -65,7 +65,6 @@ import org.apache.flink.table.gateway.api.results.FunctionInfo;
 import org.apache.flink.table.gateway.api.results.TableInfo;
 import org.apache.flink.table.gateway.environment.SqlGatewayStreamExecutionEnvironment;
 import org.apache.flink.table.gateway.service.context.SessionContext;
-import org.apache.flink.table.gateway.service.materializedtable.MaterializedTableManager;
 import org.apache.flink.table.gateway.service.result.ResultFetcher;
 import org.apache.flink.table.gateway.service.utils.SqlExecutionException;
 import org.apache.flink.table.module.ModuleManager;
@@ -106,6 +105,8 @@ import org.apache.flink.util.Preconditions;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
 
 import java.lang.reflect.Method;
 import java.time.Duration;
@@ -512,8 +513,11 @@ public class OperationExecutor {
                 || op instanceof ShowFunctionsOperation) {
             return callExecutableOperation(handle, (ExecutableOperation) op);
         } else if (op instanceof MaterializedTableOperation) {
-            return MaterializedTableManager.callMaterializedTableOperation(
-                    this, handle, (MaterializedTableOperation) op, statement);
+            return sessionContext
+                    .getSessionState()
+                    .materializedTableManager
+                    .callMaterializedTableOperation(
+                            this, handle, (MaterializedTableOperation) op, statement);
         } else {
             return callOperation(tableEnv, handle, op);
         }
@@ -530,6 +534,31 @@ public class OperationExecutor {
                                 tableConfig(),
                                 sessionContext.getSessionConf().get(RUNTIME_MODE) == STREAMING));
         return ResultFetcher.fromTableResult(handle, result, false);
+    }
+
+    public ResultFetcher refreshMaterializedTable(
+            OperationHandle handle,
+            String materializedTableIdentifier,
+            boolean isPeriodic,
+            @Nullable String scheduleTime,
+            Map<String, String> staticPartitions,
+            Map<String, String> dynamicOptions) {
+        TableEnvironmentInternal tEnv = getTableEnvironment();
+        UnresolvedIdentifier unresolvedIdentifier =
+                tEnv.getParser().parseIdentifier(materializedTableIdentifier);
+        ObjectIdentifier objectIdentifier =
+                tEnv.getCatalogManager().qualifyIdentifier(unresolvedIdentifier);
+        return sessionContext
+                .getSessionState()
+                .materializedTableManager
+                .refreshMaterializedTable(
+                        this,
+                        handle,
+                        objectIdentifier,
+                        staticPartitions,
+                        dynamicOptions,
+                        isPeriodic,
+                        scheduleTime);
     }
 
     private TableConfig tableConfig() {

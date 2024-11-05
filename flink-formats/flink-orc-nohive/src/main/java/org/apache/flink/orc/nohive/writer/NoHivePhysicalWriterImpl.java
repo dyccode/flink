@@ -21,9 +21,9 @@ package org.apache.flink.orc.nohive.writer;
 import org.apache.flink.core.fs.FSDataOutputStream;
 import org.apache.flink.orc.writer.PhysicalWriterImpl;
 
-import com.google.protobuf25.CodedOutputStream;
 import org.apache.orc.OrcFile;
 import org.apache.orc.OrcProto;
+import org.apache.orc.protobuf.CodedOutputStream;
 
 import java.io.IOException;
 
@@ -39,27 +39,27 @@ public class NoHivePhysicalWriterImpl extends PhysicalWriterImpl {
     public NoHivePhysicalWriterImpl(FSDataOutputStream out, OrcFile.WriterOptions opts)
             throws IOException {
         super(out, opts);
-        noHiveProtobufWriter = CodedOutputStream.newInstance(writer);
+        noHiveProtobufWriter = CodedOutputStream.newInstance(compressStream);
     }
 
     @Override
     protected void writeMetadata(OrcProto.Metadata metadata) throws IOException {
         metadata.writeTo(noHiveProtobufWriter);
         noHiveProtobufWriter.flush();
-        writer.flush();
+        compressStream.flush();
     }
 
     @Override
     protected void writeFileFooter(OrcProto.Footer footer) throws IOException {
         footer.writeTo(noHiveProtobufWriter);
         noHiveProtobufWriter.flush();
-        writer.flush();
+        compressStream.flush();
     }
 
     @Override
     protected void writeStripeFooter(OrcProto.StripeFooter footer) throws IOException {
         footer.writeTo(noHiveProtobufWriter);
         noHiveProtobufWriter.flush();
-        writer.flush();
+        compressStream.flush();
     }
 }

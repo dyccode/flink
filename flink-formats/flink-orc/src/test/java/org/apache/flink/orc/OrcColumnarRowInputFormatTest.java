@@ -203,7 +203,7 @@ class OrcColumnarRowInputFormatTest {
                         "test-data-flat.orc", tmpDir.resolve(generatePartitionPath(partSpec)));
 
         RowType tableType =
-                RowType.of(
+                RowType.of(new LogicalType[] {
                         /* 0 */ DataTypes.INT().getLogicalType(),
                         /* 1 */ DataTypes.INT().getLogicalType(), // part-1
                         /* 2 */ DataTypes.STRING().getLogicalType(),
@@ -214,10 +214,11 @@ class OrcColumnarRowInputFormatTest {
                         /* 7 */ DataTypes.INT().getLogicalType(),
                         /* 8 */ DataTypes.DECIMAL(10, 5).getLogicalType(), // part-4
                         /* 9 */ DataTypes.STRING().getLogicalType(),
+                        /* 10*/ DataTypes.INT().getLogicalType(),
                         /* 11*/ DataTypes.INT().getLogicalType(),
-                        /* 12*/ DataTypes.INT().getLogicalType(),
-                        /* 13*/ DataTypes.STRING().getLogicalType(), // part-5
-                        /* 14*/ DataTypes.INT().getLogicalType());
+                        /* 12*/ DataTypes.STRING().getLogicalType(), // part-5
+                        /* 13*/ DataTypes.INT().getLogicalType()
+                }, new String[] {"_col0", "f1", "_col1", "f3", "_col2", "f5", "_col3", "_col4", "f8", "_col5", "_col6", "_col7", "_col8", "f13"});
 
         int[] projectedFields = {8, 1, 3, 0, 5, 2};
 

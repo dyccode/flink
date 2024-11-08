@@ -61,19 +61,19 @@ public class OrcColumnarRowSplitReaderTest {
     protected static final int BATCH_SIZE = 10;
 
     private final DataType[] testSchemaFlat =
-            new DataType[]{
-                    DataTypes.INT(),
-                    DataTypes.STRING(),
-                    DataTypes.STRING(),
-                    DataTypes.STRING(),
-                    DataTypes.INT(),
-                    DataTypes.STRING(),
-                    DataTypes.INT(),
-                    DataTypes.INT(),
-                    DataTypes.INT()
+            new DataType[] {
+                DataTypes.INT(),
+                DataTypes.STRING(),
+                DataTypes.STRING(),
+                DataTypes.STRING(),
+                DataTypes.INT(),
+                DataTypes.STRING(),
+                DataTypes.INT(),
+                DataTypes.INT(),
+                DataTypes.INT()
             };
 
-    private final DataType[] testSchemaDecimal = new DataType[]{DataTypes.DECIMAL(10, 5)};
+    private final DataType[] testSchemaDecimal = new DataType[] {DataTypes.DECIMAL(10, 5)};
 
     private static Path testFileFlat;
     private static Path testFileDecimal;
@@ -97,10 +97,15 @@ public class OrcColumnarRowSplitReaderTest {
         for (FileInputSplit split : splits) {
 
             try (OrcColumnarRowSplitReader reader =
-                         createReader(new int[]{0, 1}, testSchemaFlat, new String[]{
-                                 "_col0", "_col1", "_col2", "_col3", "_col4", "_col5", "_col6", "_col7",
-                                 "_col8"
-                         }, new HashMap<>(), split)) {
+                    createReader(
+                            new int[] {0, 1},
+                            testSchemaFlat,
+                            new String[] {
+                                "_col0", "_col1", "_col2", "_col3", "_col4", "_col5", "_col6",
+                                "_col7", "_col8"
+                            },
+                            new HashMap<>(),
+                            split)) {
                 // read and count all rows
                 while (!reader.reachedEnd()) {
                     RowData row = reader.nextRecord(null);
@@ -122,12 +127,12 @@ public class OrcColumnarRowSplitReaderTest {
         FileInputSplit[] splits = createSplits(testFileDecimal, 1);
 
         try (OrcColumnarRowSplitReader reader =
-                     createReader(
-                             new int[]{0},
-                             testSchemaDecimal,
-                             new String[]{"_col0"},
-                             new HashMap<>(),
-                             splits[0])) {
+                createReader(
+                        new int[] {0},
+                        testSchemaDecimal,
+                        new String[] {"_col0"},
+                        new HashMap<>(),
+                        splits[0])) {
             assertThat(reader.reachedEnd()).isFalse();
             RowData row = reader.nextRecord(null);
 
@@ -171,27 +176,30 @@ public class OrcColumnarRowSplitReaderTest {
         // read all splits
         for (FileInputSplit split : splits) {
             try (OrcColumnarRowSplitReader reader =
-                         createReader(
-                                 new int[]{8, 1, 3, 0, 5, 2},
-                                 new DataType[]{
-                                         /* 0 */ DataTypes.INT(),
-                                         /* 1 */ DataTypes.INT(), // part-1
-                                         /* 2 */ DataTypes.STRING(),
-                                         /* 3 */ DataTypes.BIGINT(), // part-2
-                                         /* 4 */ DataTypes.STRING(),
-                                         /* 5 */ DataTypes.STRING(), // part-3
-                                         /* 6 */ DataTypes.STRING(),
-                                         /* 7 */ DataTypes.INT(),
-                                         /* 8 */ DataTypes.DECIMAL(10, 5), // part-4
-                                         /* 9 */ DataTypes.STRING(),
-                                         /* 10*/ DataTypes.INT(),
-                                         /* 11*/ DataTypes.INT(),
-                                         /* 12*/ DataTypes.STRING(), // part-5
-                                         /* 13*/ DataTypes.INT()
-                                 },
-                                 new String[]{"_col0", "f1", "_col1", "f3", "_col2", "f5", "_col3", "_col4", "f8", "_col5", "_col6", "_col7", "_col8", "f13"},
-                                 partSpec,
-                                 split)) {
+                    createReader(
+                            new int[] {8, 1, 3, 0, 5, 2},
+                            new DataType[] {
+                                /* 0 */ DataTypes.INT(),
+                                /* 1 */ DataTypes.INT(), // part-1
+                                /* 2 */ DataTypes.STRING(),
+                                /* 3 */ DataTypes.BIGINT(), // part-2
+                                /* 4 */ DataTypes.STRING(),
+                                /* 5 */ DataTypes.STRING(), // part-3
+                                /* 6 */ DataTypes.STRING(),
+                                /* 7 */ DataTypes.INT(),
+                                /* 8 */ DataTypes.DECIMAL(10, 5), // part-4
+                                /* 9 */ DataTypes.STRING(),
+                                /* 10*/ DataTypes.INT(),
+                                /* 11*/ DataTypes.INT(),
+                                /* 12*/ DataTypes.STRING(), // part-5
+                                /* 13*/ DataTypes.INT()
+                            },
+                            new String[] {
+                                "_col0", "f1", "_col1", "f3", "_col2", "f5", "_col3", "_col4", "f8",
+                                "_col5", "_col6", "_col7", "_col8", "f13"
+                            },
+                            partSpec,
+                            split)) {
                 // read and count all rows
                 while (!reader.reachedEnd()) {
                     RowData row = reader.nextRecord(null);
@@ -231,12 +239,15 @@ public class OrcColumnarRowSplitReaderTest {
         for (FileInputSplit split : splits) {
 
             try (OrcColumnarRowSplitReader reader =
-                         createReader(
-                                 new int[]{2, 0, 1},
-                                 testSchemaFlat,
-                                 new String[]{"_col0", "_col1", "_col2", "_col3", "_col4", "_col5", "_col6", "_col7", "_col8"},
-                                 new HashMap<>(),
-                                 split)) {
+                    createReader(
+                            new int[] {2, 0, 1},
+                            testSchemaFlat,
+                            new String[] {
+                                "_col0", "_col1", "_col2", "_col3", "_col4", "_col5", "_col6",
+                                "_col7", "_col8"
+                            },
+                            new HashMap<>(),
+                            split)) {
                 // read and count all rows
                 while (!reader.reachedEnd()) {
                     RowData row = reader.nextRecord(null);
@@ -331,26 +342,26 @@ public class OrcColumnarRowSplitReaderTest {
         partSpec.put("f12", null);
         partSpec.put("f13", null);
         try (OrcColumnarRowSplitReader reader =
-                     createReader(
-                             new int[]{2, 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13},
-                             new DataType[]{
-                                     DataTypes.FLOAT(),
-                                     DataTypes.DOUBLE(),
-                                     DataTypes.TIMESTAMP(),
-                                     DataTypes.TINYINT(),
-                                     DataTypes.SMALLINT(),
-                                     DataTypes.BOOLEAN(),
-                                     DataTypes.DATE(),
-                                     DataTypes.TIMESTAMP(),
-                                     DataTypes.DOUBLE(),
-                                     DataTypes.DOUBLE(),
-                                     DataTypes.INT(),
-                                     DataTypes.STRING(),
-                                     DataTypes.TIMESTAMP(),
-                                     DataTypes.DECIMAL(5, 3)
-                             },
-                             partSpec,
-                             split)) {
+                createReader(
+                        new int[] {2, 0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13},
+                        new DataType[] {
+                            DataTypes.FLOAT(),
+                            DataTypes.DOUBLE(),
+                            DataTypes.TIMESTAMP(),
+                            DataTypes.TINYINT(),
+                            DataTypes.SMALLINT(),
+                            DataTypes.BOOLEAN(),
+                            DataTypes.DATE(),
+                            DataTypes.TIMESTAMP(),
+                            DataTypes.DOUBLE(),
+                            DataTypes.DOUBLE(),
+                            DataTypes.INT(),
+                            DataTypes.STRING(),
+                            DataTypes.TIMESTAMP(),
+                            DataTypes.DECIMAL(5, 3)
+                        },
+                        partSpec,
+                        split)) {
             // read and count all rows
             while (!reader.reachedEnd()) {
                 RowData row = reader.nextRecord(null);
@@ -398,7 +409,7 @@ public class OrcColumnarRowSplitReaderTest {
     void testReachEnd() throws Exception {
         FileInputSplit[] splits = createSplits(testFileFlat, 1);
         try (OrcColumnarRowSplitReader reader =
-                     createReader(new int[]{0, 1}, testSchemaFlat, new HashMap<>(), splits[0])) {
+                createReader(new int[] {0, 1}, testSchemaFlat, new HashMap<>(), splits[0])) {
             while (!reader.reachedEnd()) {
                 reader.nextRecord(null);
             }

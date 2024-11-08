@@ -446,17 +446,13 @@ public class PhysicalWriterImpl implements PhysicalWriter {
 
     @Override
     public void close() throws IOException {
-        // We don't use the codec directly but do give it out codec in getCompressionCodec;
-        // that is used in tests, for boolean checks, and in StreamFactory. Some of the changes that
-        // would get rid of this pattern require cross-project interface changes, so just return the
-        // codec for now.
+        // Just release the codec but don't close the internal stream here to avoid
+        // Stream Closed or ClosedChannelException when Flink performs checkpoint.
         CompressionCodec codec = compress.getCodec();
         if (codec != null) {
             OrcCodecPool.returnCodec(codec.getKind(), codec);
         }
         compress.withCodec(null, null);
-        rawWriter.close();
-        rawWriter = null;
     }
 
     @Override

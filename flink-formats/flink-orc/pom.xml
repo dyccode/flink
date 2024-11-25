@@ -144,6 +144,24 @@ under the License.
 			</exclusions>
 		</dependency>
 
+		<dependency>
+			<groupId>com.google.protobuf</groupId>
+			<artifactId>protobuf-java</artifactId>
+			<version>${protoc.version}</version>
+		</dependency>
+
+		<dependency>
+			<groupId>org.apache.hive</groupId>
+			<artifactId>hive-storage-api</artifactId>
+			<version>${storage-api.version}</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.apache.hadoop</groupId>
+					<artifactId>hadoop-hdfs</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
 		<!-- Tests -->
 
 		<dependency>
